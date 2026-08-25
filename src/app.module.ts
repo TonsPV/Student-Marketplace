@@ -2,17 +2,15 @@ import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule, TypeOrmModuleOptions } from "@nestjs/typeorm";
 import { AppController } from "./app.controller";
-import { validateEnvironment } from "./config/environment.validation";
-import { DatabaseService } from "./database.service";
-import { TemporaryModule } from "./database/temporary.module";
-import { HealthController } from "./health.controller";
+import { UsersModule } from "./modules/users/users.module";
+import { AuthModule } from "./modules/auth/auth.module";
+import { AppService } from "./app.service";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      cache: true,
-      validate: validateEnvironment,
+      cache: true
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -29,9 +27,10 @@ import { HealthController } from "./health.controller";
         synchronize: true,
       }),
     }),
-    TemporaryModule,
+    AuthModule,
+    UsersModule,
   ],
-  controllers: [AppController, HealthController],
-  providers: [DatabaseService],
+  controllers: [AppController],
+  providers: [AppService],
 })
 export class AppModule {}
