@@ -1,8 +1,10 @@
 import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { ConfigModule, ConfigService } from "@nestjs/config";
+import { TypeOrmModule, TypeOrmModuleOptions } from "@nestjs/typeorm";
 import * as Joi from "joi";
 import { AppController } from "./app.controller";
 import { DatabaseService } from "./database.service";
+import { TemporaryModule } from "./database/temporary.module";
 import { HealthController } from "./health.controller";
 
 @Module({
@@ -26,6 +28,22 @@ import { HealthController } from "./health.controller";
         allowUnknown: true,
       },
     }),
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): TypeOrmModuleOptions => ({
+        type: "postgres",
+        host: config.getOrThrow<string>("POSTGRES_HOST"),
+        port: config.getOrThrow<number>("POSTGRES_PORT"),
+        username: config.getOrThrow<string>("POSTGRES_USER"),
+        password: config.getOrThrow<string>("POSTGRES_PASSWORD"),
+        database: config.getOrThrow<string>("POSTGRES_DB"),
+        autoLoadEntities: true,
+        // Local development only; migration strategy will be decided later.
+        synchronize: true,
+      }),
+    }),
+    TemporaryModule,
   ],
   controllers: [AppController, HealthController],
   providers: [DatabaseService],

@@ -113,4 +113,4 @@ npm run format:check
 npm run build
 ```
 
-Hiện tại project dùng PostgreSQL driver `pg` và chưa chọn ORM. TypeORM hoặc Prisma sẽ được thêm sau khi team thống nhất.
+Project hiện dùng TypeORM với PostgreSQL driver `pg`. Khi chạy local, TypeORM bật `synchronize` và tự tạo bảng tạm `temporary_records` để xác nhận kết nối database. Entity này có thể thay bằng entity thật khi team bắt đầu module nghiệp vụ.
