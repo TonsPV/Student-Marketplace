@@ -1,0 +1,31 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+.envrc
+*.local
+*.key
+*.pem
+
+# IDE and operating-system files
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Dependencies, build output, and logs
+node_modules/
+target/
+build/
+dist/
+out/
+coverage/
+*.log
+*.tsbuildinfo
+
+# Tool caches
+.gradle/
+.next/
+.cache/
