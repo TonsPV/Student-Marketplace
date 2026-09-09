@@ -28,7 +28,7 @@ export class AuthService {
     pass: string,
   ): Promise<UserInterface | null> {
     const user = await this.userService.findOneByEmail(email);
-    if (!user || user.is_locked || !user.password) return null;
+    if (!user || user.isLocked || !user.password) return null;
 
     const isValid = await this.passwordService.isValidPassword(pass, user.password);
     if (!isValid) return null;

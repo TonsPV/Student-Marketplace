@@ -88,7 +88,7 @@ export class RefreshTokenService implements OnModuleInit {
     const tokenHash = this.hashToken(refreshToken);
     const storedToken = await this.findValidToken(tokenHash);
 
-    if (!storedToken || !storedToken.user || storedToken.user.is_locked || storedToken.user.id !== payload.id) {
+    if (!storedToken || !storedToken.user || storedToken.user.isLocked || storedToken.user.id !== payload.id) {
       throw new BadRequestException('Refresh token invalid!');
     }
 

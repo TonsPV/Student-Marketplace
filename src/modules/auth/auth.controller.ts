@@ -37,7 +37,7 @@ export class AuthController {
       default: {
         summary: 'Login with email and password',
         value: {
-          email: 'admin@gmail.com',
+          email: 'admin@example.com',
           password: '12345678',
         },
       },

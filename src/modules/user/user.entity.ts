@@ -13,13 +13,13 @@ export class UserEntity extends BaseEntity {
   @Column()
   password!: string;
 
-  @Column({name: 'full_name'})
+  @Column({ name: 'full_name' })
   fullName!: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   phone!: string | null;
 
-  @Column({ nullable: true, name: 'avatar_url' })
+  @Column({ type: 'varchar', nullable: true, name: 'avatar_url' })
   avatarUrl!: string | null;
 
   @Column({
@@ -30,8 +30,11 @@ export class UserEntity extends BaseEntity {
   })
   location!: string;
 
-  @Column({ default: false })
-  is_locked!: boolean;
+  @Column({ default: false, name: 'is_locked' })
+  isLocked!: boolean;
+
+  @Column({ default: false, name: 'is_admin' })
+  isAdmin!: boolean;
 
   @OneToMany(() => RefreshTokenEntity, (rt) => rt.user)
   refreshTokens!: RefreshTokenEntity[];
