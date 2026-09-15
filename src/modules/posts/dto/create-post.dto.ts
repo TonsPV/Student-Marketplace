@@ -1,14 +1,31 @@
+import { Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
   IsEnum,
+  IsIn,
+  IsArray,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
   Length,
   Matches,
-  MaxLength,
+  ValidateNested,
 } from "class-validator";
 import { PostCondition } from "../post.entity";
+
+class LocationDto {
+  @IsIn(["Point"])
+  type!: "Point";
+
+  @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(2)
+  @IsNumber({}, { each: true })
+  coordinates!: [number, number]; // [longitude, latitude]
+}
 
 export class CreatePostDto {
   @ApiProperty({ format: "uuid" })
@@ -26,12 +43,12 @@ export class CreatePostDto {
   description!: string;
 
   @ApiProperty({
-    example: "50000.00",
-    description: "Send money as a string to avoid floating-point errors.",
+    example: "50000",
+    description: "Price in VND. Send an integer as a string to avoid floating-point errors.",
   })
-  @Matches(/^\d+(\.\d{1,2})?$/, {
-    message:
-      "price must be a non-negative amount with at most 2 decimal places",
+  @IsString()
+  @Matches(/^\d+$/, {
+    message: "price must be a non-negative integer",
   })
   price!: string;
 
@@ -39,14 +56,12 @@ export class CreatePostDto {
   @IsEnum(PostCondition)
   condition!: PostCondition;
 
-  @ApiPropertyOptional({ example: "POINT(106.7009 10.7769)" })
-  @IsOptional()
-  @IsString()
-  @Matches(/^POINT\(-?\d+(\.\d+)?\s+-?\d+(\.\d+)?\)$/i, {
-    message: "location must use WKT format: POINT(longitude latitude)",
+  @ApiPropertyOptional({
+    example: { type: "Point", coordinates: [106.7009, 10.7769] },
+    description: "GeoJSON Point: coordinates are [longitude, latitude].",
   })
-  location?: {
-    type: "Point";
-    coordinates: [number, number]; // [longitude, latitude]
-  };
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => LocationDto)
+  location?: LocationDto;
 }

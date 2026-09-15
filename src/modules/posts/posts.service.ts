@@ -35,7 +35,6 @@ export class PostsService {
     const [items, total] = await this.postsRepository.findAndCount({
       where: {
         status: PostStatus.ACTIVE,
-        isHidden: false,
         ...(categoryId ? { categoryId } : {}),
       },
       relations: {
@@ -67,12 +66,36 @@ export class PostsService {
   }
 
   // Lấy chi tiết bài viết public
+  async findMyPosts(sellerId: string, query: FindPostsDto) {
+    const { page, limit, categoryId } = query;
+    const [items, total] = await this.postsRepository.findAndCount({
+      where: {
+        sellerId,
+        ...(categoryId ? { categoryId } : {}),
+      },
+      order: {
+        createdAt: 'DESC',
+      },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    return {
+      items,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   async findOne(id: string) {
     const post = await this.postsRepository.findOne({
       where: {
         id,
         status: PostStatus.ACTIVE,
-        isHidden: false,
       },
       relations: {
         seller: true,
@@ -106,24 +129,6 @@ export class PostsService {
     return this.postsRepository.save(post);
   }
 
-  // Ẩn bài viết
-  async hide(id: string, requesterId: string) {
-    const post = await this.getOwnedPost(id, requesterId);
-
-    post.isHidden = true;
-
-    return this.postsRepository.save(post);
-  }
-
-  // Hiện bài viết
-  async show(id: string, requesterId: string) {
-    const post = await this.getOwnedPost(id, requesterId);
-
-    post.isHidden = false;
-
-    return this.postsRepository.save(post);
-  }
-
   // Đánh dấu đã bán
   async markAsSold(id: string, requesterId: string) {
     const post = await this.getOwnedPost(id, requesterId);
@@ -140,13 +145,26 @@ export class PostsService {
     await this.postsRepository.softDelete(id);
   }
 
+  async restore(id: string, requesterId: string) {
+    const post = await this.getOwnedPost(id, requesterId, true);
+
+    if (!post.deletedAt) {
+      return post;
+    }
+
+    await this.postsRepository.restore(id);
+    return this.postsRepository.findOneByOrFail({ id });
+  }
+
   // Kiểm tra quyền sở hữu bài viết
   private async getOwnedPost(
     id: string,
     requesterId: string,
+    withDeleted = false,
   ) {
     const post = await this.postsRepository.findOne({
       where: { id },
+      withDeleted,
     });
 
     if (!post) {

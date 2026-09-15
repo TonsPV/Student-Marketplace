@@ -8,9 +8,11 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   Point,
   UpdateDateColumn,
 } from "typeorm";
+import { PostImageEntity } from "../post-images/post-image.entity";
 
 export enum PostCondition {
   NEW = "new",
@@ -68,18 +70,15 @@ export class PostEntity extends BaseEntity {
   status!: PostStatus;
 
   @Column({
-    name: "is_hidden",
-    default: false,
-  })
-  isHidden!: boolean;
-
-  @Column({
     type: "geography",
     spatialFeatureType: "Point",
     srid: 4326,
     nullable: true,
   })
   location!: Point | null;
+
+  @OneToMany(() => PostImageEntity, (image) => image.post)
+  images!: PostImageEntity[];
 
   @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;

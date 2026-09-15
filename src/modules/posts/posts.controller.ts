@@ -46,6 +46,13 @@ export class PostsController {
   }
 
   // Lấy chi tiết bài viết
+  @Get("me")
+  @ApiBearerAuth("access-token")
+  @ResponseMessage("My posts retrieved successfully!")
+  findMyPosts(@GetUser() user: UserInterface, @Query() query: FindPostsDto) {
+    return this.postsService.findMyPosts(user.id, query);
+  }
+
   @Get(":id")
   @Public()
   @ResponseMessage("Post retrieved successfully!")
@@ -66,22 +73,6 @@ export class PostsController {
     return this.postsService.update(id, dto, user.id);
   }
 
-  // Ẩn bài viết
-  @Patch(":id/hide")
-  @ApiBearerAuth("access-token")
-  @ResponseMessage("Post hidden successfully!")
-  hide(@Param("id") id: string, @GetUser() user: UserInterface) {
-    return this.postsService.hide(id, user.id);
-  }
-
-  // Hiện lại bài viết
-  @Patch(":id/show")
-  @ApiBearerAuth("access-token")
-  @ResponseMessage("Post shown successfully!")
-  show(@Param("id") id: string, @GetUser() user: UserInterface) {
-    return this.postsService.show(id, user.id);
-  }
-
   // Đánh dấu đã bán
   @Patch(":id/sold")
   @ApiBearerAuth("access-token")
@@ -96,5 +87,12 @@ export class PostsController {
   @ResponseMessage("Post deleted successfully!")
   remove(@Param("id") id: string, @GetUser() user: UserInterface) {
     return this.postsService.remove(id, user.id);
+  }
+
+  @Patch(":id/restore")
+  @ApiBearerAuth("access-token")
+  @ResponseMessage("Post restored successfully!")
+  restore(@Param("id", new ParseUUIDPipe()) id: string, @GetUser() user: UserInterface) {
+    return this.postsService.restore(id, user.id);
   }
 }
