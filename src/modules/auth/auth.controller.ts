@@ -11,12 +11,12 @@ import {
 import { AuthService } from './services/auth.service';
 import { PasswordService } from './services/password.service';
 import { Public, ResponseMessage } from '../../common/decorators/customize.decorator';
-import { ApiBearerAuth, ApiBody, ApiExcludeEndpoint } from '@nestjs/swagger';
+import { ApiBody, ApiExcludeEndpoint } from '@nestjs/swagger';
 import { LoginDto } from './dto/login.dto';
 import { Request, Response } from 'express';
 import { RegisterUserDto } from './dto/register.dto';
-import { GoogleAuthGuard } from 'src/common/guards/google-auth.guard';
-import { UserInterface } from 'src/shared/interfaces/user.interface';
+import { GoogleAuthGuard } from '../../common/guards/google-auth.guard';
+import { UserInterface } from '../../shared/interfaces/user.interface';
 
 type CookieRequest = Omit<Request, 'cookies'> & {
   cookies: Record<string, string | undefined>;
@@ -67,19 +67,20 @@ export class AuthController {
   }
 
   @Post('/logout')
-  @ApiBearerAuth('access-token')
+  @Public()
   @ResponseMessage('Logout successful!')
   handleLogout(
     @Req() req: CookieRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
+    this.authService.validateCookieOrigin(req.headers.origin);
     const refreshToken = req.cookies?.['refresh_token'];
     return this.authService.logout(refreshToken, response);
   }
 
   @Post('/register')
   @Public()
-  @ResponseMessage('Đăng ký thành công!')
+  @ResponseMessage('Register successful!')
   @ApiBody({ type: RegisterUserDto })
   async handleRegister(@Body() registerUserDto: RegisterUserDto) {
     return await this.authService.register(registerUserDto);
@@ -87,11 +88,12 @@ export class AuthController {
 
   @Post('/refresh')
   @Public()
-  @ResponseMessage('Làm mới token thành công!')
+  @ResponseMessage('Refresh token successful!')
   async refreshToken(
     @Req() req: CookieRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
+    this.authService.validateCookieOrigin(req.headers.origin);
     const refreshToken = req.cookies['refresh_token'];
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token is required');
@@ -104,7 +106,7 @@ export class AuthController {
   @Public()
   @UseGuards(GoogleAuthGuard)
   @ApiExcludeEndpoint()
-  @ResponseMessage('Đăng nhập bằng Google')
+  @ResponseMessage('Login with Google')
   handleGoogleLogin() {
     // This route will redirect to Google for authentication
   }

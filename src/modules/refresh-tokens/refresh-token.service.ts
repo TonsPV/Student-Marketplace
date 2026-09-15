@@ -96,7 +96,7 @@ export class RefreshTokenService implements OnModuleInit {
       sub: payload.id,
       iss: 'Backend-core',
       id: payload.id,
-      email: payload.email,
+      email: storedToken.user.email,
     };
 
     const newRefreshToken = this.createRefreshToken(newPayload);
@@ -114,7 +114,7 @@ export class RefreshTokenService implements OnModuleInit {
       refreshToken: newRefreshToken,
       user: {
         id: payload.id,
-        email: payload.email,
+        email: storedToken.user.email,
       },
     };
   }

@@ -1,9 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch } from '@nestjs/common';
 import { UserService } from './user.service';
-import { GetUser, ResponseMessage } from 'src/common/decorators/customize.decorator';
+import { GetUser, ResponseMessage } from '../../common/decorators/customize.decorator';
 import { ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { UserInterface } from 'src/shared/interfaces/user.interface';
+import { UserInterface } from '../../shared/interfaces/user.interface';
 
 @Controller('user')
 export class UserController {

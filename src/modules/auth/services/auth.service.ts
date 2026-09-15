@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   UnauthorizedException,
@@ -44,7 +45,7 @@ export class AuthService {
   }): Promise<UserInterface> {
     const user = await this.userService.findOneByEmail(input.email);
 
-    if (user?.isLocked || user?.deletedAt) {
+    if (user?.isLocked) {
       throw new UnauthorizedException('Account is locked');
     }
 
@@ -118,6 +119,13 @@ export class AuthService {
         email,
       },
     };
+  }
+
+  validateCookieOrigin(origin: string | undefined) {
+    const allowedOrigin = this.configService.get<string>('FE_DOMAIN');
+    if (!origin || origin === 'null' || origin !== allowedOrigin) {
+      throw new ForbiddenException('Invalid request origin');
+    }
   }
 
   async logout(refreshToken: string | undefined, response: Response) {

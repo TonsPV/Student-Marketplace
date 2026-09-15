@@ -10,7 +10,7 @@ import { PassportModule } from '@nestjs/passport';
 import { PasswordService } from './services/password.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
-import googleOauthConfig from 'src/config/google-oauth.config';
+import googleOauthConfig from '../../config/google-oauth.config';
 
 @Module({
   imports: [
