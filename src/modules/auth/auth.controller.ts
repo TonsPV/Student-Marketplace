@@ -11,7 +11,7 @@ import {
 import { AuthService } from './services/auth.service';
 import { PasswordService } from './services/password.service';
 import { Public, ResponseMessage } from '../../common/decorators/customize.decorator';
-import { ApiBearerAuth, ApiBody } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiExcludeEndpoint } from '@nestjs/swagger';
 import { LoginDto } from './dto/login.dto';
 import { Request, Response } from 'express';
 import { RegisterUserDto } from './dto/register.dto';
@@ -103,6 +103,7 @@ export class AuthController {
   @Get('/google/login')
   @Public()
   @UseGuards(GoogleAuthGuard)
+  @ApiExcludeEndpoint()
   @ResponseMessage('Đăng nhập bằng Google')
   handleGoogleLogin() {
     // This route will redirect to Google for authentication
