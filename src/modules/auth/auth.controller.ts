@@ -15,9 +15,15 @@ import { ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { LoginDto } from './dto/login.dto';
 import { Request, Response } from 'express';
 import { RegisterUserDto } from './dto/register.dto';
+import { GoogleAuthGuard } from 'src/common/guards/google-auth.guard';
+import { UserInterface } from 'src/shared/interfaces/user.interface';
 
 type CookieRequest = Omit<Request, 'cookies'> & {
   cookies: Record<string, string | undefined>;
+};
+
+type GoogleCallbackRequest = CookieRequest & {
+  user: UserInterface;
 };
 
 @Controller('auth')
@@ -92,5 +98,29 @@ export class AuthController {
     }
 
     return this.authService.processToken(refreshToken, response);
+  }
+
+  @Get('/google/login')
+  @Public()
+  @UseGuards(GoogleAuthGuard)
+  @ResponseMessage('Đăng nhập bằng Google')
+  handleGoogleLogin() {
+    // This route will redirect to Google for authentication
+  }
+
+  @Get('/google/callback')
+  @Public()
+  @UseGuards(GoogleAuthGuard)
+  @ResponseMessage('Google callback')
+  async handleGoogleCallback(
+    @Req() req: GoogleCallbackRequest,
+    @Res() res: Response,
+  ) {
+    const loginResult = await this.authService.login(req.user, req, res);
+    const redirectUrl = this.authService.buildBrowserRedirectUrl(
+      loginResult.accessToken,
+    );
+
+    return res.redirect(redirectUrl);
   }
 }

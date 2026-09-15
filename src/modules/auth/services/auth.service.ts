@@ -1,7 +1,9 @@
 import {
   Injectable,
   InternalServerErrorException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { RefreshTokenService } from '../../refresh-tokens/refresh-token.service';
@@ -34,6 +36,27 @@ export class AuthService {
     if (!isValid) return null;
 
     return this.toSafeUser(user);
+  }
+
+  async validateGoogleUser(input: {
+    email: string;
+    name: string;
+  }): Promise<UserInterface> {
+    const user = await this.userService.findOneByEmail(input.email);
+
+    if (user?.isLocked || user?.deletedAt) {
+      throw new UnauthorizedException('Account is locked');
+    }
+
+    if (user) return this.toSafeUser(user);
+
+    const newUser = await this.userService.registerUser({
+      email: input.email,
+      fullName: input.name,
+      password: randomUUID(), // hashed in registerUser; Google users never log in with it
+      phone: '',
+    });
+    return this.toSafeUser(newUser);
   }
 
   private toSafeUser(
@@ -132,5 +155,25 @@ export class AuthService {
       accessToken: tokenResult.accessToken,
       user: tokenResult.user,
     };
+  }
+  
+  buildBrowserRedirectUrl(accessToken: string) {
+    const browserRedirectUri = this.configService.get<string>(
+      'BROWSER_REDIRECT_URI',
+    );
+
+    if (!browserRedirectUri) {
+      throw new InternalServerErrorException(
+        'Browser redirect URI is not configured',
+      );
+    }
+
+    const redirectUrl = new URL(browserRedirectUri);
+    redirectUrl.searchParams.delete('token');
+    redirectUrl.hash = new URLSearchParams({
+      access_token: accessToken,
+    }).toString();
+
+    return redirectUrl.toString();
   }
 }

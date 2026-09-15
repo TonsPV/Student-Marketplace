@@ -9,12 +9,15 @@ import { UserModule } from '../user/user.module';
 import { PassportModule } from '@nestjs/passport';
 import { PasswordService } from './services/password.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { GoogleStrategy } from './strategies/google.strategy';
+import googleOauthConfig from 'src/config/google-oauth.config';
 
 @Module({
   imports: [
     RefreshTokenModule,
     UserModule,
     PassportModule,
+    ConfigModule.forFeature(googleOauthConfig),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
@@ -29,6 +32,6 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PasswordService, JwtStrategy],
+  providers: [AuthService, PasswordService, JwtStrategy, GoogleStrategy],
 })
 export class AuthModule {}
