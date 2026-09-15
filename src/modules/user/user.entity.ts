@@ -2,6 +2,7 @@
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Entity, Column, OneToMany, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, Index } from 'typeorm';
 import { RefreshTokenEntity } from '../refresh-tokens/refresh-token.entity';
+import { PostEntity } from '../posts/post.entity';
 
 
 @Entity('user')
@@ -38,6 +39,9 @@ export class UserEntity extends BaseEntity {
 
   @OneToMany(() => RefreshTokenEntity, (rt) => rt.user)
   refreshTokens!: RefreshTokenEntity[];
+
+  @OneToMany(() => PostEntity, (post) => post.seller)
+  posts!: PostEntity[];
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
