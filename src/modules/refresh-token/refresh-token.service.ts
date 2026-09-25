@@ -1,16 +1,14 @@
 import { BadRequestException, Injectable, OnModuleInit } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
-import ms, { StringValue } from 'ms';
+import ms, { StringValue } from "ms";
 import { RefreshTokenPayload, TokenPayload } from "./refresh-token.type";
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository, Not, LessThan, MoreThan } from "typeorm";
 import { DeviceInfo, RefreshTokenEntity } from "./refresh-token.entity";
 import { UserEntity } from "../user/user.entity";
-import { createHash } from 'crypto';
-import { uuidv7 } from 'uuidv7';
-
-
+import { createHash } from "crypto";
+import { uuidv7 } from "uuidv7";
 
 @Injectable()
 export class RefreshTokenService implements OnModuleInit {
@@ -25,16 +23,16 @@ export class RefreshTokenService implements OnModuleInit {
     private tokenRepository: Repository<RefreshTokenEntity>,
     private jwtService: JwtService,
     private configService: ConfigService,
-  ) { }
+  ) {}
 
   onModuleInit() {
-    const accessSecret = this.configService.get<string>('JWT_ACCESS_SECRET');
+    const accessSecret = this.configService.get<string>("JWT_ACCESS_SECRET");
     const accessExpiresIn = this.configService.get<string>(
-      'JWT_ACCESS_EXPIRED',
+      "JWT_ACCESS_EXPIRED",
     ) as StringValue | undefined;
-    const refreshSecret = this.configService.get<string>('JWT_REFRESH_SECRET');
+    const refreshSecret = this.configService.get<string>("JWT_REFRESH_SECRET");
     const refreshExpiresIn = this.configService.get<string>(
-      'JWT_REFRESH_EXPIRED',
+      "JWT_REFRESH_EXPIRED",
     ) as StringValue | undefined;
     const refreshExpiresInMs = refreshExpiresIn
       ? ms(refreshExpiresIn)
@@ -45,9 +43,9 @@ export class RefreshTokenService implements OnModuleInit {
       !accessExpiresIn ||
       !refreshSecret ||
       !refreshExpiresIn ||
-      typeof refreshExpiresInMs !== 'number'
+      typeof refreshExpiresInMs !== "number"
     ) {
-      throw new Error('JWT token config is invalid');
+      throw new Error("JWT token config is invalid");
     }
 
     this.accessSecret = accessSecret;
@@ -75,28 +73,30 @@ export class RefreshTokenService implements OnModuleInit {
   async processToken(refreshToken: string) {
     let payload: RefreshTokenPayload;
     try {
-      payload = this.jwtService.verify<RefreshTokenPayload>(
-        refreshToken,
-        {
-          secret: this.refreshSecret,
-        },
-      );
+      payload = this.jwtService.verify<RefreshTokenPayload>(refreshToken, {
+        secret: this.refreshSecret,
+      });
     } catch {
-      throw new BadRequestException('Refresh token invalid!');
+      throw new BadRequestException("Refresh token invalid!");
     }
 
     const tokenHash = this.hashToken(refreshToken);
     const storedToken = await this.findValidToken(tokenHash);
 
-    if (!storedToken || !storedToken.user || storedToken.user.isLocked || storedToken.user.id !== payload.id) {
-      throw new BadRequestException('Refresh token invalid!');
+    if (
+      !storedToken ||
+      !storedToken.user ||
+      storedToken.user.isLocked ||
+      storedToken.user.id !== payload.id
+    ) {
+      throw new BadRequestException("Refresh token invalid!");
     }
 
     const newPayload: TokenPayload = {
       sub: payload.id,
-      iss: 'Backend-core',
+      iss: "Backend-core",
       id: payload.id,
-      email: payload.email,
+      email: storedToken.user.email,
     };
 
     const newRefreshToken = this.createRefreshToken(newPayload);
@@ -114,13 +114,13 @@ export class RefreshTokenService implements OnModuleInit {
       refreshToken: newRefreshToken,
       user: {
         id: payload.id,
-        email: payload.email,
+        email: storedToken.user.email,
       },
     };
   }
 
   hashToken(token: string) {
-    return createHash('sha256').update(token).digest('hex');
+    return createHash("sha256").update(token).digest("hex");
   }
 
   getRefreshTokenExpiresAt() {
@@ -150,6 +150,14 @@ export class RefreshTokenService implements OnModuleInit {
     return { count: result.affected ?? 0 };
   }
 
+  async revokeAllRefreshTokensForUser(userId: string) {
+    const result = await this.tokenRepository.update(
+      { user: { id: userId }, isRevoked: false },
+      { isRevoked: true },
+    );
+    return { count: result.affected ?? 0 };
+  }
+
   async cleanupInactiveRefreshTokens() {
     const result = await this.tokenRepository.delete([
       { expiresAt: LessThan(new Date()) },
@@ -166,7 +174,7 @@ export class RefreshTokenService implements OnModuleInit {
         expiresAt: MoreThan(new Date()),
       },
       relations: { user: true },
-      order: { createdAt: 'DESC' },
+      order: { createdAt: "DESC" },
     });
   }
 
@@ -184,16 +192,20 @@ export class RefreshTokenService implements OnModuleInit {
       });
 
       if (!oldToken) {
-        throw new BadRequestException('Refresh token invalid!');
+        throw new BadRequestException("Refresh token invalid!");
       }
 
       const result = await repo.update(
-        { id: data.oldTokenId, isRevoked: false, expiresAt: MoreThan(new Date()) },
+        {
+          id: data.oldTokenId,
+          isRevoked: false,
+          expiresAt: MoreThan(new Date()),
+        },
         { isRevoked: true },
       );
 
       if (result.affected !== 1) {
-        throw new BadRequestException('Refresh token invalid!');
+        throw new BadRequestException("Refresh token invalid!");
       }
 
       return repo.save(
