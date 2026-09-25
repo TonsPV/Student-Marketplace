@@ -1,7 +1,7 @@
 // user.entity.ts
 import { BaseEntity } from '../../common/entities/base.entity';
 import { Entity, Column, OneToMany, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, Index } from 'typeorm';
-import { RefreshTokenEntity } from '../refresh-tokens/refresh-token.entity';
+import { RefreshTokenEntity } from '../refresh-token/refresh-token.entity';
 
 
 @Entity('user')

@@ -7,18 +7,23 @@ import {
   Res,
   UnauthorizedException,
   UseGuards,
-} from '@nestjs/common';
-import { AuthService } from './services/auth.service';
-import { PasswordService } from './services/password.service';
-import { Public, ResponseMessage } from '../../common/decorators/customize.decorator';
-import { ApiBody, ApiExcludeEndpoint } from '@nestjs/swagger';
-import { LoginDto } from './dto/login.dto';
-import { Request, Response } from 'express';
-import { RegisterUserDto } from './dto/register.dto';
-import { GoogleAuthGuard } from '../../common/guards/google-auth.guard';
-import { UserInterface } from '../../shared/interfaces/user.interface';
+} from "@nestjs/common";
+import { AuthService } from "./services/auth.service";
+import { PasswordService } from "./services/password.service";
+import {
+  GetUser,
+  Public,
+  ResponseMessage,
+} from "../../common/decorators/customize.decorator";
+import { ApiBearerAuth, ApiBody, ApiExcludeEndpoint } from "@nestjs/swagger";
+import { LoginDto } from "./dto/login.dto";
+import { Request, Response } from "express";
+import { RegisterUserDto } from "./dto/register.dto";
+import { GoogleAuthGuard } from "../../common/guards/google-auth.guard";
+import { UserInterface } from "../../shared/interfaces/user.interface";
+import { ChangePasswordDto } from "./dto/change-password.dto";
 
-type CookieRequest = Omit<Request, 'cookies'> & {
+type CookieRequest = Omit<Request, "cookies"> & {
   cookies: Record<string, string | undefined>;
 };
 
@@ -26,25 +31,25 @@ type GoogleCallbackRequest = CookieRequest & {
   user: UserInterface;
 };
 
-@Controller('auth')
+@Controller("auth")
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly passwordService: PasswordService,
   ) {}
 
-  @Post('/login')
+  @Post("/login")
   @Public()
-  @ResponseMessage('Login successful!')
+  @ResponseMessage("Login successful!")
   @ApiBody({
     type: LoginDto,
-    description: 'Login information',
+    description: "Login information",
     examples: {
       default: {
-        summary: 'Login with email and password',
+        summary: "Login with email and password",
         value: {
-          email: 'admin@example.com',
-          password: '12345678',
+          email: "admin@example.com",
+          password: "12345678",
         },
       },
     },
@@ -60,61 +65,71 @@ export class AuthController {
     );
 
     if (!user) {
-      throw new UnauthorizedException('Invalid Email/Password !');
+      throw new UnauthorizedException("Invalid Email/Password !");
     }
 
     return await this.authService.login(user, request, response);
   }
 
-  @Post('/logout')
+  @Post("/logout")
   @Public()
-  @ResponseMessage('Logout successful!')
+  @ResponseMessage("Logout successful!")
   handleLogout(
     @Req() req: CookieRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
     this.authService.validateCookieOrigin(req.headers.origin);
-    const refreshToken = req.cookies?.['refresh_token'];
+    const refreshToken = req.cookies?.["refresh_token"];
     return this.authService.logout(refreshToken, response);
   }
 
-  @Post('/register')
+  @Post("/register")
   @Public()
-  @ResponseMessage('Register successful!')
+  @ResponseMessage("Register successful!")
   @ApiBody({ type: RegisterUserDto })
   async handleRegister(@Body() registerUserDto: RegisterUserDto) {
     return await this.authService.register(registerUserDto);
   }
 
-  @Post('/refresh')
+  @Post("/refresh")
   @Public()
-  @ResponseMessage('Refresh token successful!')
+  @ResponseMessage("Refresh token successful!")
   async refreshToken(
     @Req() req: CookieRequest,
     @Res({ passthrough: true }) response: Response,
   ) {
     this.authService.validateCookieOrigin(req.headers.origin);
-    const refreshToken = req.cookies['refresh_token'];
+    const refreshToken = req.cookies["refresh_token"];
     if (!refreshToken) {
-      throw new UnauthorizedException('Refresh token is required');
+      throw new UnauthorizedException("Refresh token is required");
     }
 
     return this.authService.processToken(refreshToken, response);
   }
 
-  @Get('/google/login')
+  @Post("/change-password")
+  @ResponseMessage("Change password successfully!")
+  @ApiBearerAuth("access-token")
+  async changePassword(
+    @GetUser() user: UserInterface,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(user.id, dto);
+  }
+
+  @Get("/google/login")
   @Public()
   @UseGuards(GoogleAuthGuard)
   @ApiExcludeEndpoint()
-  @ResponseMessage('Login with Google')
+  @ResponseMessage("Login with Google")
   handleGoogleLogin() {
     // This route will redirect to Google for authentication
   }
 
-  @Get('/google/callback')
+  @Get("/google/callback")
   @Public()
   @UseGuards(GoogleAuthGuard)
-  @ResponseMessage('Google callback')
+  @ResponseMessage("Google callback")
   async handleGoogleCallback(
     @Req() req: GoogleCallbackRequest,
     @Res() res: Response,
