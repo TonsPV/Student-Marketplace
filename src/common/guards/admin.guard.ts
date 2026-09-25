@@ -3,24 +3,28 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  UnauthorizedException,
 } from "@nestjs/common";
-import { Request } from "express";
-import { UserService } from "../../modules/user/user.service";
-import { UserInterface } from "../../shared/interfaces/user.interface";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
+import { UserEntity } from "../../modules/user/user.entity";
 
 @Injectable()
 export class AdminGuard implements CanActivate {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    @InjectRepository(UserEntity)
+    private readonly users: Repository<UserEntity>,
+  ) {}
 
-  async canActivate(context: ExecutionContext) {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context
       .switchToHttp()
-      .getRequest<Request & { user?: UserInterface }>();
-
-    if (!request.user || !(await this.userService.isAdmin(request.user.id))) {
+      .getRequest<{ user?: { id: string } }>();
+    if (!request.user?.id)
+      throw new UnauthorizedException("Authentication required");
+    const user = await this.users.findOneBy({ id: request.user.id });
+    if (!user || user.isLocked || !user.isAdmin)
       throw new ForbiddenException("Admin access required");
-    }
-
     return true;
   }
 }
