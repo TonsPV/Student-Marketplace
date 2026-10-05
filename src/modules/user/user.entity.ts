@@ -1,41 +1,50 @@
 // user.entity.ts
-import { BaseEntity } from '../../common/entities/base.entity';
-import { Entity, Column, OneToMany, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, Index } from 'typeorm';
-import { RefreshTokenEntity } from '../refresh-tokens/refresh-token.entity';
-import { PostEntity } from '../posts/post.entity';
-import { RefreshTokenEntity } from '../refresh-token/refresh-token.entity';
+import { BaseEntity } from "../../common/entities/base.entity";
+import {
+  Entity,
+  Column,
+  OneToMany,
+  CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
+  Index,
+} from "typeorm";
+import { RefreshTokenEntity } from "../refresh-token/refresh-token.entity";
+import { PostEntity } from "../posts/post.entity";
 
-
-@Entity('user')
+@Entity("user")
 export class UserEntity extends BaseEntity {
-  @Index('idx_user_email_active', { unique: true, where: '"deleted_at" IS NULL' })
+  @Index("idx_user_email_active", {
+    unique: true,
+    where: '"deleted_at" IS NULL',
+  })
   @Column()
   email!: string;
 
   @Column()
   password!: string;
 
-  @Column({ name: 'full_name' })
+  @Column({ name: "full_name" })
   fullName!: string;
 
-  @Column({ type: 'varchar', nullable: true })
+  @Column({ type: "varchar", nullable: true })
   phone!: string | null;
 
-  @Column({ type: 'varchar', nullable: true, name: 'avatar_url' })
+  @Column({ type: "varchar", nullable: true, name: "avatar_url" })
   avatarUrl!: string | null;
 
   @Column({
-    type: 'geography',
-    spatialFeatureType: 'Point',
+    type: "geography",
+    spatialFeatureType: "Point",
     srid: 4326,
     nullable: true,
   })
   location!: string;
 
-  @Column({ default: false, name: 'is_locked' })
+  @Column({ default: false, name: "is_locked" })
   isLocked!: boolean;
 
-  @Column({ default: false, name: 'is_admin' })
+  @Column({ default: false, name: "is_admin" })
   isAdmin!: boolean;
 
   @OneToMany(() => RefreshTokenEntity, (rt) => rt.user)
@@ -44,12 +53,12 @@ export class UserEntity extends BaseEntity {
   @OneToMany(() => PostEntity, (post) => post.seller)
   posts!: PostEntity[];
 
-  @CreateDateColumn({ name: 'created_at' })
+  @CreateDateColumn({ name: "created_at" })
   createdAt!: Date;
 
-  @UpdateDateColumn({ name: 'updated_at' })
+  @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
 
-  @DeleteDateColumn({ name: 'deleted_at' })
+  @DeleteDateColumn({ name: "deleted_at" })
   deletedAt!: Date;
 }
