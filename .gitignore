@@ -11,6 +11,8 @@
 # IDE and operating-system files
 .idea/
 .vscode/
+!.vscode/
+!.vscode/mcp.json
 *.iml
 .DS_Store
 Thumbs.db
@@ -20,6 +22,7 @@ node_modules/
 target/
 build/
 dist/
+docs/
 out/
 docs/
 coverage/

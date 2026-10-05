@@ -6,6 +6,8 @@ import { UserModule } from "./modules/user/user.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { CategoryModule } from "./modules/categories/category.module";
 import { AppService } from "./app.service";
+import { PostsModule } from './modules/posts/posts.module';
+import { PostImagesModule } from './modules/post-images/post-images.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { AppService } from "./app.service";
     }),
     AuthModule,
     UserModule,
+    PostsModule,
+    PostImagesModule,
     CategoryModule,
   ],
   controllers: [AppController],
