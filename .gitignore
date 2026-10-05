@@ -21,6 +21,7 @@ target/
 build/
 dist/
 out/
+docs/
 coverage/
 *.log
 *.tsbuildinfo
