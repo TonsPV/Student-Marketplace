@@ -9,6 +9,7 @@ import { AppService } from "./app.service";
 import { PostsModule } from './modules/posts/posts.module';
 import { PostImagesModule } from './modules/post-images/post-images.module';
 import { ReportsModule } from './modules/reports/reports.module';
+import { ConversationsModule } from './modules/conversations/conversations.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { ReportsModule } from './modules/reports/reports.module';
     PostImagesModule,
     CategoryModule,
     ReportsModule,
+    ConversationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
