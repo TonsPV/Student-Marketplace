@@ -10,6 +10,7 @@ import { PostsModule } from './modules/posts/posts.module';
 import { PostImagesModule } from './modules/post-images/post-images.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
+import { RealtimeModule } from "./modules/realtime/realtime.module";
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { ConversationsModule } from './modules/conversations/conversations.modul
     CategoryModule,
     ReportsModule,
     ConversationsModule,
+    RealtimeModule
   ],
   controllers: [AppController],
   providers: [AppService],

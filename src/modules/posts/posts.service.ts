@@ -5,12 +5,13 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository } from "typeorm";
+import { Brackets, Repository } from "typeorm";
 
 import { createPaginationMeta } from "../../common/utils/pagination.util";
 import { CategoryEntity } from "../categories/category.entity";
 import { CreatePostDto } from "./dto/create-post.dto";
 import { FindPostsDto } from "./dto/find-posts.dto";
+import { SearchPostsDto } from "./dto/search-posts.dto";
 import { UpdatePostDto } from "./dto/update-post.dto";
 import { PostEntity, PostStatus } from "./post.entity";
 
@@ -99,6 +100,91 @@ export class PostsService {
     return {
       items,
       meta: createPaginationMeta(query, total),
+    };
+  }
+
+  async search(query: SearchPostsDto) {
+    const { q, categoryId, minPrice, maxPrice, lat, lng, radius, page, limit } =
+      query;
+
+    if (
+      minPrice !== undefined &&
+      maxPrice !== undefined &&
+      minPrice > maxPrice
+    ) {
+      throw new BadRequestException(
+        'minPrice must be less than or equal to maxPrice',
+      );
+    }
+
+    const hasLocationFilter =
+      lat !== undefined && lng !== undefined && radius !== undefined;
+
+    const queryBuilder = this.postsRepository
+      .createQueryBuilder('post')
+      .leftJoin('post.seller', 'seller')
+      .addSelect(['seller.id', 'seller.fullName', 'seller.avatarUrl'])
+      .where('post.status = :status', { status: PostStatus.ACTIVE })
+      .andWhere('post.deleted_at IS NULL');
+
+    if (q) {
+      queryBuilder.andWhere(
+        new Brackets((builder) => {
+          builder
+            .where('post.title ILIKE :keyword', { keyword: `%${q}%` })
+            .orWhere('post.description ILIKE :keyword', {
+              keyword: `%${q}%`,
+            });
+        }),
+      );
+    }
+
+    if (categoryId) {
+      queryBuilder.andWhere('post.category_id = :categoryId', { categoryId });
+    }
+
+    if (minPrice !== undefined) {
+      queryBuilder.andWhere('post.price >= :minPrice', { minPrice });
+    }
+
+    if (maxPrice !== undefined) {
+      queryBuilder.andWhere('post.price <= :maxPrice', { maxPrice });
+    }
+
+    if (hasLocationFilter) {
+      const searchPoint =
+        'ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography';
+
+      queryBuilder
+        .addSelect(`ST_Distance(post.location, ${searchPoint})`, 'distance')
+        .andWhere('post.location IS NOT NULL')
+        .andWhere(`ST_DWithin(post.location, ${searchPoint}, :radius)`, {
+          lat,
+          lng,
+          radius,
+        });
+    }
+
+    const total = await queryBuilder.clone().getCount();
+    const { entities, raw } = await queryBuilder
+      .orderBy('post.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getRawAndEntities();
+
+    const items = entities.map((post, index) => ({
+      ...post,
+      distance: hasLocationFilter ? Number(raw[index].distance) : null,
+    }));
+
+    return {
+      items,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 

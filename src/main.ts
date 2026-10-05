@@ -8,6 +8,7 @@ import helmet from 'helmet';
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import cookieParser from 'cookie-parser';
+import { SocketIoAdapter } from "./common/adapters/socket-io.adapter";
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
@@ -41,6 +42,9 @@ async function bootstrap(): Promise<void> {
 
   // Transform response from controller
   app.useGlobalInterceptors(new TransformInterceptor(reflector));
+
+  // Socket.IO adapter (CORS lấy từ FE_DOMAIN)
+  app.useWebSocketAdapter(new SocketIoAdapter(app));
 
   app.setGlobalPrefix("api");
   app.enableVersioning({
