@@ -12,16 +12,36 @@ import {
   Repository,
 } from "typeorm";
 
+import { PaginationDto } from "../../common/dto/pagination.dto";
+import { createPaginationMeta } from "../../common/utils/pagination.util";
 import { PostEntity, PostStatus } from "../posts/post.entity";
 import { ConversationEntity } from "./entities/conversation.entity";
 import { MessageEntity } from "./entities/message.entity";
 import { CreateConversationDto } from "./dto/create-conversation.dto";
-import { FilterConversationDto } from "./dto/filter-conversation.dto";
-import { FilterMessageDto } from "./dto/filter-message.dto";
 import { SendMessageDto } from "./dto/send-message.dto";
 
 // PostgreSQL unique violation error code
 const PG_UNIQUE_VIOLATION = "23505";
+const CONVERSATION_SELECT = [
+  "conv.id",
+  "conv.postId",
+  "conv.buyerId",
+  "conv.sellerId",
+  "conv.lastMessage",
+  "conv.lastMessageAt",
+  "conv.createdAt",
+  "conv.updatedAt",
+  "post.id",
+  "post.title",
+  "post.price",
+  "post.status",
+  "buyer.id",
+  "buyer.fullName",
+  "buyer.avatarUrl",
+  "seller.id",
+  "seller.fullName",
+  "seller.avatarUrl",
+];
 
 @Injectable()
 export class ConversationsService {
@@ -55,6 +75,16 @@ export class ConversationsService {
         "You are not a participant of this conversation",
       );
     return conv;
+  }
+
+  private createConversationQuery() {
+    return this.conversationsRepository
+      .createQueryBuilder("conv")
+      .withDeleted()
+      .leftJoin("conv.post", "post")
+      .leftJoin("conv.buyer", "buyer")
+      .leftJoin("conv.seller", "seller")
+      .select(CONVERSATION_SELECT);
   }
 
   // ── createConversation ───────────────────────────────────────────────────────
@@ -117,37 +147,10 @@ export class ConversationsService {
   // QueryBuilder bắt buộc để filter DB-side và load historical soft-deleted
   // Post/Buyer/Seller an toàn.
 
-  async findAll(userId: string, query: FilterConversationDto) {
+  async findAll(userId: string, query: PaginationDto) {
     const { page, limit } = query;
 
-    const [items, total] = await this.conversationsRepository
-      .createQueryBuilder("conv")
-      // withDeleted trên alias chính để LEFT JOIN vẫn nạp soft-deleted relations
-      .withDeleted()
-      .leftJoin("conv.post", "post")
-      .leftJoin("conv.buyer", "buyer")
-      .leftJoin("conv.seller", "seller")
-      // Chỉ select các field cần thiết; không select password / token
-      .select([
-        "conv.id",
-        "conv.postId",
-        "conv.buyerId",
-        "conv.sellerId",
-        "conv.lastMessage",
-        "conv.lastMessageAt",
-        "conv.createdAt",
-        "conv.updatedAt",
-        "post.id",
-        "post.title",
-        "post.price",
-        "post.status",
-        "buyer.id",
-        "buyer.fullName",
-        "buyer.avatarUrl",
-        "seller.id",
-        "seller.fullName",
-        "seller.avatarUrl",
-      ])
+    const [items, total] = await this.createConversationQuery()
       // Filter DB-side — không filter ở application layer
       .where("conv.buyerId = :userId OR conv.sellerId = :userId", { userId })
       // Sort: lastMessageAt DESC NULLS LAST, sau đó createdAt DESC
@@ -159,12 +162,7 @@ export class ConversationsService {
 
     return {
       items,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      meta: createPaginationMeta(query, total),
     };
   }
 
@@ -177,32 +175,7 @@ export class ConversationsService {
     await this.getConversationForParticipant(conversationId, userId);
 
     // Load full detail với historical relations
-    const conv = await this.conversationsRepository
-      .createQueryBuilder("conv")
-      .withDeleted()
-      .leftJoin("conv.post", "post")
-      .leftJoin("conv.buyer", "buyer")
-      .leftJoin("conv.seller", "seller")
-      .select([
-        "conv.id",
-        "conv.postId",
-        "conv.buyerId",
-        "conv.sellerId",
-        "conv.lastMessage",
-        "conv.lastMessageAt",
-        "conv.createdAt",
-        "conv.updatedAt",
-        "post.id",
-        "post.title",
-        "post.price",
-        "post.status",
-        "buyer.id",
-        "buyer.fullName",
-        "buyer.avatarUrl",
-        "seller.id",
-        "seller.fullName",
-        "seller.avatarUrl",
-      ])
+    const conv = await this.createConversationQuery()
       .where("conv.id = :conversationId", { conversationId })
       .getOne();
 
@@ -215,7 +188,7 @@ export class ConversationsService {
   async findMessages(
     conversationId: string,
     userId: string,
-    query: FilterMessageDto,
+    query: PaginationDto,
   ) {
     const { page, limit } = query;
 
@@ -231,12 +204,7 @@ export class ConversationsService {
 
     return {
       items,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      meta: createPaginationMeta(query, total),
     };
   }
 

@@ -7,6 +7,7 @@ import {
   OneToMany,
 } from "typeorm";
 import { BaseEntity } from "../../common/entities/base.entity";
+import { PostEntity } from "../posts/post.entity";
 
 @Entity("categories")
 @Index("idx_category_sibling_name", ["parentId", "name"], { unique: true })
@@ -30,4 +31,7 @@ export class CategoryEntity extends BaseEntity {
 
   @OneToMany(() => CategoryEntity, (category) => category.parent)
   children!: CategoryEntity[];
+
+  @OneToMany(() => PostEntity, (post) => post.category)
+  posts!: PostEntity[];
 }

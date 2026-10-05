@@ -14,11 +14,10 @@ import {
   GetUser,
   ResponseMessage,
 } from "../../common/decorators/customize.decorator";
+import { PaginationDto } from "../../common/dto/pagination.dto";
 import { UserInterface } from "../../shared/interfaces/user.interface";
 import { ConversationsService } from "./conversations.service";
 import { CreateConversationDto } from "./dto/create-conversation.dto";
-import { FilterConversationDto } from "./dto/filter-conversation.dto";
-import { FilterMessageDto } from "./dto/filter-message.dto";
 import { SendMessageDto } from "./dto/send-message.dto";
 
 @ApiTags("Conversations")
@@ -40,10 +39,7 @@ export class ConversationsController {
   @Get()
   @ApiOperation({ summary: "List conversations for the current user" })
   @ResponseMessage("Conversations retrieved successfully")
-  findAll(
-    @GetUser() user: UserInterface,
-    @Query() query: FilterConversationDto,
-  ) {
+  findAll(@GetUser() user: UserInterface, @Query() query: PaginationDto) {
     return this.conversationsService.findAll(user.id, query);
   }
 
@@ -63,7 +59,7 @@ export class ConversationsController {
   findMessages(
     @Param("id", new ParseUUIDPipe()) id: string,
     @GetUser() user: UserInterface,
-    @Query() query: FilterMessageDto,
+    @Query() query: PaginationDto,
   ) {
     return this.conversationsService.findMessages(id, user.id, query);
   }

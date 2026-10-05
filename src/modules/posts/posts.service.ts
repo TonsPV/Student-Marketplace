@@ -7,6 +7,8 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { Repository } from "typeorm";
 
+import { createPaginationMeta } from "../../common/utils/pagination.util";
+import { CategoryEntity } from "../categories/category.entity";
 import { CreatePostDto } from "./dto/create-post.dto";
 import { FindPostsDto } from "./dto/find-posts.dto";
 import { UpdatePostDto } from "./dto/update-post.dto";
@@ -17,10 +19,14 @@ export class PostsService {
   constructor(
     @InjectRepository(PostEntity)
     private readonly postsRepository: Repository<PostEntity>,
+    @InjectRepository(CategoryEntity)
+    private readonly categoriesRepository: Repository<CategoryEntity>,
   ) {}
 
   // Tạo bài viết mới
   async create(dto: CreatePostDto, sellerId: string) {
+    await this.ensureCategoryExists(dto.categoryId);
+
     const post = this.postsRepository.create({
       ...dto,
       sellerId,
@@ -40,12 +46,17 @@ export class PostsService {
       },
       relations: {
         seller: true,
+        category: true,
       },
       select: {
         seller: {
           id: true,
           fullName: true,
           avatarUrl: true,
+        },
+        category: {
+          id: true,
+          name: true,
         },
       },
       order: {
@@ -57,12 +68,7 @@ export class PostsService {
 
     return {
       items,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      meta: createPaginationMeta(query, total),
     };
   }
 
@@ -74,6 +80,15 @@ export class PostsService {
         sellerId,
         ...(categoryId ? { categoryId } : {}),
       },
+      relations: {
+        category: true,
+      },
+      select: {
+        category: {
+          id: true,
+          name: true,
+        },
+      },
       order: {
         createdAt: "DESC",
       },
@@ -83,12 +98,7 @@ export class PostsService {
 
     return {
       items,
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
+      meta: createPaginationMeta(query, total),
     };
   }
 
@@ -100,6 +110,7 @@ export class PostsService {
       },
       relations: {
         seller: true,
+        category: true,
       },
       select: {
         seller: {
@@ -107,7 +118,23 @@ export class PostsService {
           fullName: true,
           avatarUrl: true,
         },
+        category: {
+          id: true,
+          name: true,
+        },
       },
+    });
+
+    if (!post) {
+      throw new NotFoundException("Post not found");
+    }
+
+    return post;
+  }
+
+  async getActivePost(id: string) {
+    const post = await this.postsRepository.findOne({
+      where: { id, status: PostStatus.ACTIVE },
     });
 
     if (!post) {
@@ -123,6 +150,10 @@ export class PostsService {
 
     if (post.status === PostStatus.HIDDEN) {
       throw new BadRequestException("Hidden posts cannot be updated");
+    }
+
+    if (dto.categoryId !== undefined) {
+      await this.ensureCategoryExists(dto.categoryId);
     }
 
     Object.assign(post, dto);
@@ -162,11 +193,8 @@ export class PostsService {
   }
 
   // Kiểm tra quyền sở hữu bài viết
-  private async getOwnedPost(
-    id: string,
-    requesterId: string,
-    withDeleted = false,
-  ) {
+  // Dùng chung cho các module thao tác trên bài đăng, ví dụ PostImagesModule.
+  async getOwnedPost(id: string, requesterId: string, withDeleted = false) {
     const post = await this.postsRepository.findOne({
       where: { id },
       withDeleted,
@@ -181,5 +209,15 @@ export class PostsService {
     }
 
     return post;
+  }
+
+  private async ensureCategoryExists(categoryId: string) {
+    const category = await this.categoriesRepository.findOneBy({
+      id: categoryId,
+    });
+
+    if (!category) {
+      throw new NotFoundException("Category not found");
+    }
   }
 }
