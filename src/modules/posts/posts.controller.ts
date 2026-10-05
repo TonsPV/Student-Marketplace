@@ -20,6 +20,7 @@ import {
 import { UserInterface } from "../../shared/interfaces/user.interface";
 import { CreatePostDto } from "./dto/create-post.dto";
 import { FindPostsDto } from "./dto/find-posts.dto";
+import { SearchPostsDto } from "./dto/search-posts.dto";
 import { UpdatePostDto } from "./dto/update-post.dto";
 import { PostsService } from "./posts.service";
 
@@ -51,6 +52,13 @@ export class PostsController {
   @ResponseMessage("My posts retrieved successfully!")
   findMyPosts(@GetUser() user: UserInterface, @Query() query: FindPostsDto) {
     return this.postsService.findMyPosts(user.id, query);
+  }
+
+  @Get("search")
+  @Public()
+  @ResponseMessage("Posts found successfully!")
+  search(@Query() query: SearchPostsDto) {
+    return this.postsService.search(query);
   }
 
   @Get(":id")
