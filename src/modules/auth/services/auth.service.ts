@@ -66,12 +66,13 @@ export class AuthService {
   }
 
   private toSafeUser(
-    user: Pick<UserEntity, "fullName" | "email" | "id">,
+    user: Pick<UserEntity, "fullName" | "email" | "id" | "isAdmin">,
   ): UserInterface {
     return {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
+      isAdmin: user.isAdmin,
     };
   }
 
@@ -116,13 +117,14 @@ export class AuthService {
   }
 
   async login(user: UserInterface, request: Request, response: Response) {
-    const { id, email } = user;
+    const { id, email, isAdmin } = user;
 
     const payload = {
       sub: id,
       iss: "Backend-core",
       id,
       email,
+      isAdmin,
     };
 
     const refreshToken = this.refreshTokenService.createRefreshToken(payload);

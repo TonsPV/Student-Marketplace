@@ -1,4 +1,5 @@
 import { BaseEntity } from "../../common/entities/base.entity";
+import { CategoryEntity } from "../categories/category.entity";
 import { UserEntity } from "../user/user.entity";
 import {
   Column,
@@ -24,6 +25,7 @@ export enum PostCondition {
 export enum PostStatus {
   ACTIVE = "active",
   SOLD = "sold",
+  HIDDEN = "hidden",
 }
 
 @Entity("posts")
@@ -43,6 +45,12 @@ export class PostEntity extends BaseEntity {
 
   @Column({ name: "category_id", type: "uuid" })
   categoryId!: string;
+
+  @ManyToOne(() => CategoryEntity, (category) => category.posts, {
+    onDelete: "RESTRICT",
+  })
+  @JoinColumn({ name: "category_id" })
+  category!: CategoryEntity;
 
   @Column({ type: "varchar", length: 150 })
   title!: string;
