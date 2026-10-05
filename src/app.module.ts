@@ -4,6 +4,7 @@ import { TypeOrmModule, TypeOrmModuleOptions } from "@nestjs/typeorm";
 import { AppController } from "./app.controller";
 import { UserModule } from "./modules/user/user.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { CategoryModule } from "./modules/categories/category.module";
 import { AppService } from "./app.service";
 import { PostsModule } from './modules/posts/posts.module';
 import { PostImagesModule } from './modules/post-images/post-images.module';
@@ -12,7 +13,7 @@ import { PostImagesModule } from './modules/post-images/post-images.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      cache: true
+      cache: true,
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -33,6 +34,7 @@ import { PostImagesModule } from './modules/post-images/post-images.module';
     UserModule,
     PostsModule,
     PostImagesModule,
+    CategoryModule,
   ],
   controllers: [AppController],
   providers: [AppService],

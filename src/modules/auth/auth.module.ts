@@ -4,7 +4,7 @@ import { AuthController } from './auth.controller';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { StringValue } from 'ms';
-import { RefreshTokenModule } from '../refresh-tokens/refresh-token.module';
+import { RefreshTokenModule } from '../refresh-token/refresh-token.module';
 import { UserModule } from '../user/user.module';
 import { PassportModule } from '@nestjs/passport';
 import { PasswordService } from './services/password.service';
