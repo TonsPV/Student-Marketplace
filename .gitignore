@@ -30,3 +30,5 @@ coverage/
 .gradle/
 .next/
 .cache/
+
+/scripts

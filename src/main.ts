@@ -1,25 +1,52 @@
-import { ValidationPipe } from "@nestjs/common";
+import { ValidationPipe, VersioningType } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { NestFactory } from "@nestjs/core";
+import { NestFactory, Reflector } from "@nestjs/core";
 import { AppModule } from "./app.module";
 import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { helmetConfig } from "./config/helmet.config";
 import helmet from 'helmet';
+import { TransformInterceptor } from "./common/interceptors/transform.interceptor";
+import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
+import cookieParser from 'cookie-parser';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
   const config = app.get(ConfigService);
+  const reflector = app.get(Reflector);
 
   // Apply helmet middleware with custom config
   app.use(helmet(helmetConfig));
+ 
+  // Config cookie (Http-only, Secure)
+  app.use(cookieParser());
 
-  app.setGlobalPrefix("api");
+  // Config CORS
+  app.enableCors({
+    origin: config.get<string>('FE_DOMAIN'), // FE domain
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
+  // Enable global guard for JWT authentication
+  app.useGlobalGuards(new JwtAuthGuard(reflector));
+
   app.useGlobalPipes(
     new ValidationPipe({
+      whitelist: true, // Tự động bỏ các field không có trong DTO
+      forbidNonWhitelisted: true, // (Tùy chọn) Báo lỗi luôn nếu gửi field lạ
       transform: true,
-      whitelist: true,
     }),
   );
+
+  // Transform response from controller
+  app.useGlobalInterceptors(new TransformInterceptor(reflector));
+
+  app.setGlobalPrefix("api");
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: '1',
+  });
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle("Student Marketplace API")
@@ -56,7 +83,7 @@ async function bootstrap(): Promise<void> {
 
   app.enableShutdownHooks();
   const port = config.get<string | number>('PORT') ?? 8080;
-  await app.listen(port, "0.0.0.0");
+  await app.listen(port);
 }
 
 void bootstrap();
