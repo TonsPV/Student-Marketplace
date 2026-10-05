@@ -1,15 +1,16 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
-} from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+} from "@nestjs/common";
+import { InjectRepository } from "@nestjs/typeorm";
+import { Repository } from "typeorm";
 
-import { CreatePostDto } from './dto/create-post.dto';
-import { FindPostsDto } from './dto/find-posts.dto';
-import { UpdatePostDto } from './dto/update-post.dto';
-import { PostEntity, PostStatus } from './post.entity';
+import { CreatePostDto } from "./dto/create-post.dto";
+import { FindPostsDto } from "./dto/find-posts.dto";
+import { UpdatePostDto } from "./dto/update-post.dto";
+import { PostEntity, PostStatus } from "./post.entity";
 
 @Injectable()
 export class PostsService {
@@ -48,7 +49,7 @@ export class PostsService {
         },
       },
       order: {
-        createdAt: 'DESC',
+        createdAt: "DESC",
       },
       skip: (page - 1) * limit,
       take: limit,
@@ -74,7 +75,7 @@ export class PostsService {
         ...(categoryId ? { categoryId } : {}),
       },
       order: {
-        createdAt: 'DESC',
+        createdAt: "DESC",
       },
       skip: (page - 1) * limit,
       take: limit,
@@ -110,19 +111,19 @@ export class PostsService {
     });
 
     if (!post) {
-      throw new NotFoundException('Post not found');
+      throw new NotFoundException("Post not found");
     }
 
     return post;
   }
 
   // Cập nhật bài viết
-  async update(
-    id: string,
-    dto: UpdatePostDto,
-    requesterId: string,
-  ) {
+  async update(id: string, dto: UpdatePostDto, requesterId: string) {
     const post = await this.getOwnedPost(id, requesterId);
+
+    if (post.status === PostStatus.HIDDEN) {
+      throw new BadRequestException("Hidden posts cannot be updated");
+    }
 
     Object.assign(post, dto);
 
@@ -132,6 +133,10 @@ export class PostsService {
   // Đánh dấu đã bán
   async markAsSold(id: string, requesterId: string) {
     const post = await this.getOwnedPost(id, requesterId);
+
+    if (post.status === PostStatus.HIDDEN) {
+      throw new BadRequestException("Hidden posts cannot be marked as sold");
+    }
 
     post.status = PostStatus.SOLD;
 
@@ -168,11 +173,11 @@ export class PostsService {
     });
 
     if (!post) {
-      throw new NotFoundException('Post not found');
+      throw new NotFoundException("Post not found");
     }
 
     if (post.sellerId !== requesterId) {
-      throw new ForbiddenException('You do not own this post');
+      throw new ForbiddenException("You do not own this post");
     }
 
     return post;

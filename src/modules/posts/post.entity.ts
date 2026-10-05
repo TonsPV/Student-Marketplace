@@ -24,6 +24,7 @@ export enum PostCondition {
 export enum PostStatus {
   ACTIVE = "active",
   SOLD = "sold",
+  HIDDEN = "hidden",
 }
 
 @Entity("posts")
