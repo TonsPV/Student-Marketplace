@@ -8,6 +8,7 @@ import { CategoryModule } from "./modules/categories/category.module";
 import { AppService } from "./app.service";
 import { PostsModule } from './modules/posts/posts.module';
 import { PostImagesModule } from './modules/post-images/post-images.module';
+import { RealtimeModule } from "./modules/realtime/realtime.module";
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { PostImagesModule } from './modules/post-images/post-images.module';
     PostsModule,
     PostImagesModule,
     CategoryModule,
+    RealtimeModule
   ],
   controllers: [AppController],
   providers: [AppService],
