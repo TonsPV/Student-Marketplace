@@ -42,6 +42,7 @@
     "uuidv7": "^1.2.1"
   },
   "devDependencies": {
+    "@drawio/mcp": "^1.6.1",
     "@nestjs/cli": "11.0.24",
     "@nestjs/schematics": "11.1.0",
     "@types/cookie-parser": "^1.4.10",
