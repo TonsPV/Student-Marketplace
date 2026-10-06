@@ -1,4 +1,5 @@
 import {
+  Check,
   Column,
   CreateDateColumn,
   Entity,
@@ -11,9 +12,11 @@ import {
 import { BaseEntity } from "../../../common/entities/base.entity";
 import { PostEntity } from "../../posts/post.entity";
 import { UserEntity } from "../../user/user.entity";
-import { MessageEntity } from "./message.entity";
+import { MessageEntity } from "../../messages/entities/message.entity";
 
-// Lưu hội thoại giữa buyer và seller theo từng bài đăng.
+// Hội thoại buyer/seller theo từng bài đăng. Mỗi (postId, buyerId) một row.
+// Thứ tự chuẩn của tin là messages.sequence (bigint, string ở entity/JSON),
+// không phải createdAt. Mọi bigint là string; chỉ dùng BigInt nội bộ (spec §3.1).
 @Entity("conversations")
 @Index("uq_conversations_post_buyer", ["postId", "buyerId"], { unique: true })
 @Index("idx_conversations_buyer_last_message_at", ["buyerId", "lastMessageAt"])
@@ -21,6 +24,7 @@ import { MessageEntity } from "./message.entity";
   "sellerId",
   "lastMessageAt",
 ])
+@Check("chk_conversations_buyer_ne_seller", '"buyer_id" <> "seller_id"')
 export class ConversationEntity extends BaseEntity {
   @Column({ name: "post_id", type: "uuid" })
   postId!: string;
@@ -48,6 +52,28 @@ export class ConversationEntity extends BaseEntity {
 
   @Column({ name: "last_message_at", type: "timestamptz", nullable: true })
   lastMessageAt!: Date | null;
+
+  @Column({ name: "last_message_id", type: "uuid", nullable: true })
+  lastMessageId!: string | null;
+
+  @Column({ name: "last_message_sender_id", type: "uuid", nullable: true })
+  lastMessageSenderId!: string | null;
+
+  /** Counter cấp sequence, đồng thời là sequence tin mới nhất. 0 khi rỗng. */
+  @Column({ name: "last_message_sequence", type: "bigint", default: "0" })
+  lastMessageSequence!: string;
+
+  /** Tăng mỗi mutation có thay đổi state; FE gate snapshot theo version. */
+  @Column({ name: "state_version", type: "bigint", default: "0" })
+  stateVersion!: string;
+
+  /** Watermark buyer đã xem; không giảm. */
+  @Column({ name: "buyer_read_sequence", type: "bigint", default: "0" })
+  buyerReadSequence!: string;
+
+  /** Watermark seller đã xem; không giảm. */
+  @Column({ name: "seller_read_sequence", type: "bigint", default: "0" })
+  sellerReadSequence!: string;
 
   @OneToMany(() => MessageEntity, (msg) => msg.conversation)
   messages!: MessageEntity[];
