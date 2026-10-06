@@ -1,24 +1,21 @@
 import {
-  Body,
   Controller,
   Get,
   Param,
   ParseUUIDPipe,
-  Patch,
   Post,
+  Body,
   Query,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-
 import {
   GetUser,
   ResponseMessage,
 } from "../../common/decorators/customize.decorator";
 import { PaginationDto } from "../../common/dto/pagination.dto";
-import { UserInterface } from "../../shared/interfaces/user.interface";
+import type { UserInterface } from "../../shared/interfaces/user.interface";
 import { ConversationsService } from "./conversations.service";
 import { CreateConversationDto } from "./dto/create-conversation.dto";
-import { SendMessageDto } from "./dto/send-message.dto";
 
 @ApiTags("Conversations")
 @ApiBearerAuth("access-token")
@@ -51,37 +48,5 @@ export class ConversationsController {
     @GetUser() user: UserInterface,
   ) {
     return this.conversationsService.findOne(id, user.id);
-  }
-
-  @Get(":id/messages")
-  @ApiOperation({ summary: "List messages in a conversation" })
-  @ResponseMessage("Messages retrieved successfully")
-  findMessages(
-    @Param("id", new ParseUUIDPipe()) id: string,
-    @GetUser() user: UserInterface,
-    @Query() query: PaginationDto,
-  ) {
-    return this.conversationsService.findMessages(id, user.id, query);
-  }
-
-  @Post(":id/messages")
-  @ApiOperation({ summary: "Send a message in a conversation" })
-  @ResponseMessage("Message sent successfully")
-  sendMessage(
-    @Param("id", new ParseUUIDPipe()) id: string,
-    @Body() dto: SendMessageDto,
-    @GetUser() user: UserInterface,
-  ) {
-    return this.conversationsService.sendMessage(id, user.id, dto);
-  }
-
-  @Patch(":id/read")
-  @ApiOperation({ summary: "Mark messages in a conversation as read" })
-  @ResponseMessage("Messages marked as read")
-  markAsRead(
-    @Param("id", new ParseUUIDPipe()) id: string,
-    @GetUser() user: UserInterface,
-  ) {
-    return this.conversationsService.markAsRead(id, user.id);
   }
 }

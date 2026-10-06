@@ -7,11 +7,15 @@ import { UserModule } from "./modules/user/user.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { CategoryModule } from "./modules/categories/category.module";
 import { AppService } from "./app.service";
-import { PostsModule } from './modules/posts/posts.module';
-import { PostImagesModule } from './modules/post-images/post-images.module';
-import { ReportsModule } from './modules/reports/reports.module';
-import { ConversationsModule } from './modules/conversations/conversations.module';
+import { PostsModule } from "./modules/posts/posts.module";
+import { PostImagesModule } from "./modules/post-images/post-images.module";
+import { ReportsModule } from "./modules/reports/reports.module";
+import { ConversationsModule } from "./modules/conversations/conversations.module";
+import { MessagesModule } from "./modules/messages/messages.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { StorageModule } from "./modules/storage/storage.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
+import { databaseOptions } from "./config/database.config";
 import { ReviewsModule } from "./modules/reviews/reviews.module";
 
 @Module({
@@ -24,15 +28,32 @@ import { ReviewsModule } from "./modules/reviews/reviews.module";
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService): TypeOrmModuleOptions => ({
-        type: "postgres",
-        host: config.getOrThrow<string>("POSTGRES_HOST"),
-        port: config.getOrThrow<number>("POSTGRES_PORT"),
-        username: config.getOrThrow<string>("POSTGRES_USER"),
-        password: config.getOrThrow<string>("POSTGRES_PASSWORD"),
-        database: config.getOrThrow<string>("POSTGRES_DB"),
+        ...databaseOptions(
+          Object.fromEntries(
+            [
+              "POSTGRES_HOST",
+              "POSTGRES_PORT",
+              "POSTGRES_USER",
+              "POSTGRES_PASSWORD",
+              "POSTGRES_DB",
+              "POSTGRES_SCHEMA",
+              "POSTGRES_SYNCHRONIZE",
+              "NODE_ENV",
+            ].map((key) => [
+              key,
+              [
+                "POSTGRES_HOST",
+                "POSTGRES_PORT",
+                "POSTGRES_USER",
+                "POSTGRES_PASSWORD",
+                "POSTGRES_DB",
+              ].includes(key)
+                ? config.getOrThrow<string>(key)
+                : config.get<string>(key),
+            ]),
+          ),
+        ),
         autoLoadEntities: true,
-        // Local development only; migration strategy will be decided later.
-        synchronize: true,
       }),
     }),
     AuthModule,
@@ -43,6 +64,9 @@ import { ReviewsModule } from "./modules/reviews/reviews.module";
     CategoryModule,
     ReportsModule,
     ConversationsModule,
+    MessagesModule,
+    NotificationsModule,
+    StorageModule,
     RealtimeModule,
     ReviewsModule,
   ],
