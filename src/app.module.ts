@@ -11,6 +11,7 @@ import { PostImagesModule } from './modules/post-images/post-images.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
 import { RealtimeModule } from "./modules/realtime/realtime.module";
+import { StorageModule } from "./modules/storage/storage.module";
 
 @Module({
   imports: [
@@ -40,7 +41,8 @@ import { RealtimeModule } from "./modules/realtime/realtime.module";
     CategoryModule,
     ReportsModule,
     ConversationsModule,
-    RealtimeModule
+    RealtimeModule,
+    StorageModule
   ],
   controllers: [AppController],
   providers: [AppService],
