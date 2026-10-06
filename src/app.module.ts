@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule, TypeOrmModuleOptions } from "@nestjs/typeorm";
+import { FavoritesModule } from "./modules/favorites/favorites.module";
 import { AppController } from "./app.controller";
 import { UserModule } from "./modules/user/user.module";
 import { AuthModule } from "./modules/auth/auth.module";
@@ -15,6 +16,7 @@ import { NotificationsModule } from "./modules/notifications/notifications.modul
 import { StorageModule } from "./modules/storage/storage.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { databaseOptions } from "./config/database.config";
+import { ReviewsModule } from "./modules/reviews/reviews.module";
 
 @Module({
   imports: [
@@ -57,6 +59,7 @@ import { databaseOptions } from "./config/database.config";
     AuthModule,
     UserModule,
     PostsModule,
+    FavoritesModule,
     PostImagesModule,
     CategoryModule,
     ReportsModule,
@@ -65,6 +68,7 @@ import { databaseOptions } from "./config/database.config";
     NotificationsModule,
     StorageModule,
     RealtimeModule,
+    ReviewsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
