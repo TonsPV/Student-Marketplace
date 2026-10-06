@@ -35,3 +35,5 @@ coverage/
 .cache/
 
 /scripts
+/specs
+/plans
