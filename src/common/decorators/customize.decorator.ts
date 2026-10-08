@@ -1,13 +1,21 @@
 import {
+  applyDecorators,
   createParamDecorator,
   ExecutionContext,
   SetMetadata,
-} from '@nestjs/common';
-import { Request } from 'express';
-import { UserInterface } from '../../shared/interfaces/user.interface';
+} from "@nestjs/common";
+import { Request } from "express";
+import { UserInterface } from "../../shared/interfaces/user.interface";
 
-export const IS_PUBLIC_KEY = 'isPublic';
-export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
+import { declareRouteAccess } from "../../modules/authorization/route-access.resolver";
+
+export const IS_PUBLIC_KEY = "isPublic";
+export const AUTHORIZATION_ROUTE_KEY_LEGACY = "authorization:route";
+export const Public = () =>
+  applyDecorators(
+    SetMetadata(IS_PUBLIC_KEY, true),
+    declareRouteAccess({ mode: "public" }),
+  );
 
 export const GetUser = createParamDecorator(
   (data: unknown, ctx: ExecutionContext) => {
@@ -20,6 +28,6 @@ export const GetUser = createParamDecorator(
   },
 );
 
-export const RESPONSE_MESSAGE = 'response_message';
+export const RESPONSE_MESSAGE = "response_message";
 export const ResponseMessage = (message: string) =>
   SetMetadata(RESPONSE_MESSAGE, message);
