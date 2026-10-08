@@ -11,6 +11,9 @@ import { RealtimeService } from "../../src/modules/realtime/realtime.service";
 import { StorageService } from "../../src/modules/storage/storage.service";
 import { UserEntity } from "../../src/modules/user/user.entity";
 import { PostImageEntity } from "../../src/modules/post-images/post-image.entity";
+import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
+import { CaslAbilityFactory } from "../../src/modules/authorization/casl-ability.factory";
+import type { AuthenticatedContext } from "../../src/modules/authorization/authorization.types";
 import {
   createTestDataSource,
   initializeTestDatabase,
@@ -38,8 +41,15 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     headObject: jest.fn(),
     presignGetMany: jest.fn(),
   };
+  const authorization = new AuthorizationService(new CaslAbilityFactory());
+  const context = (user: UserEntity): AuthenticatedContext =>
+    authorization.createAuthenticatedContext(user);
   const send = (content: string, clientId = uuidv7()) =>
-    messages.sendMessage(buyer.id, { postId: post.id, content, clientId });
+    messages.sendMessage(context(buyer), {
+      postId: post.id,
+      content,
+      clientId,
+    });
   const state = (id: string) =>
     ds.getRepository(ConversationEntity).findOneByOrFail({ id });
 
@@ -50,12 +60,14 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       ds.getRepository(ConversationEntity),
       ds.getRepository(PostEntity),
       ds,
+      authorization,
     );
     notifications = new NotificationsService(
       ds.getRepository(NotificationEntity),
       ds,
       conversations,
       realtime as unknown as RealtimeService,
+      authorization,
     );
     messages = new MessagesService(
       ds,
@@ -63,6 +75,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       notifications,
       storage as unknown as StorageService,
       realtime as unknown as RealtimeService,
+      authorization,
     );
   });
   afterAll(async () => {
@@ -108,12 +121,14 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       stateVersion: "12",
       lastMessage: latest.content,
     });
-    expect(await notifications.getUnreadCount(seller.id)).toEqual({ total: 1 });
-    expect(await messages.getUnreadCount(seller.id)).toEqual({
+    expect(await notifications.getUnreadCount(context(seller))).toEqual({
+      total: 1,
+    });
+    expect(await messages.getUnreadCount(context(seller))).toEqual({
       total: 12,
       conversations: 1,
     });
-    expect(await messages.getUnreadCount(buyer.id)).toEqual({
+    expect(await messages.getUnreadCount(context(buyer))).toEqual({
       total: 0,
       conversations: 0,
     });
@@ -137,7 +152,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     expect((await send("hello", clientId)).id).toBe(results[0].id);
     expect(
       (
-        await messages.sendMessage(buyer.id, {
+        await messages.sendMessage(context(buyer), {
           conversationId: results[0].conversationId,
           content: " hello ",
           clientId,
@@ -145,7 +160,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       ).id,
     ).toBe(results[0].id);
     await expect(send("new")).rejects.toMatchObject({ status: 404 });
-    await messages.sendMessage(seller.id, {
+    await messages.sendMessage(context(seller), {
       conversationId: results[0].conversationId,
       content: "reply",
       clientId,
@@ -180,14 +195,14 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
 
   it("read counts actual incoming rows, leaves later messages unread, and repeating/older reads are no-ops", async () => {
     const first = await send("first");
-    const reply = await messages.sendMessage(seller.id, {
+    const reply = await messages.sendMessage(context(seller), {
       conversationId: first.conversationId,
       content: "reply",
       clientId: uuidv7(),
     });
     const third = await send("third");
     expect(
-      await messages.markAsRead(first.conversationId, seller.id, {
+      await messages.markAsRead(first.conversationId, context(seller), {
         throughMessageId: reply.id,
       }),
     ).toMatchObject({
@@ -199,7 +214,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     realtime.emitToConversation.mockClear();
     realtime.emitToUser.mockClear();
     expect(
-      await messages.markAsRead(first.conversationId, seller.id, {
+      await messages.markAsRead(first.conversationId, context(seller), {
         throughMessageId: first.id,
       }),
     ).toMatchObject({
@@ -211,11 +226,14 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     expect(realtime.emitToConversation).not.toHaveBeenCalled();
     expect(realtime.emitToUser).not.toHaveBeenCalled();
     expect(
-      await messages.markAsRead(first.conversationId, seller.id, {
+      await messages.markAsRead(first.conversationId, context(seller), {
         throughMessageId: third.id,
       }),
     ).toMatchObject({ updated: 1, unreadCount: 0, stateVersion: "5" });
-    const list = await notifications.getList(seller.id, { page: 1, limit: 10 });
+    const list = await notifications.getList(context(seller), {
+      page: 1,
+      limit: 10,
+    });
     expect(list.items).toHaveLength(1);
     expect(list.items[0]).toMatchObject({
       isRead: true,
@@ -226,7 +244,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       unreadNotification: null,
     });
     expect(
-      await messages.markAsRead(first.conversationId, seller.id, {
+      await messages.markAsRead(first.conversationId, context(seller), {
         throughMessageId: third.id,
       }),
     ).toMatchObject({ updated: 0, stateVersion: "5" });
@@ -237,31 +255,31 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     const noti = await ds
       .getRepository(NotificationEntity)
       .findOneByOrFail({ userId: seller.id });
-    const read = await notifications.markOneAsRead(seller.id, noti.id);
+    const read = await notifications.markOneAsRead(context(seller), noti.id);
     expect(read.updated).toBe(1);
     expect(read.snapshots[0].changed).toHaveLength(1);
     expect(read.snapshots[0].changed[0]).toMatchObject({
       id: noti.id,
       isRead: true,
     });
-    expect(await messages.getUnreadCount(seller.id)).toEqual({
+    expect(await messages.getUnreadCount(context(seller))).toEqual({
       total: 1,
       conversations: 1,
     });
     expect((await state(first.conversationId)).sellerReadSequence).toBe("0");
     expect(
-      (await notifications.markOneAsRead(seller.id, noti.id)).updated,
+      (await notifications.markOneAsRead(context(seller), noti.id)).updated,
     ).toBe(0);
     await send("second");
     expect(await ds.getRepository(NotificationEntity).count()).toBe(2);
-    const all = await notifications.markAllAsRead(seller.id);
+    const all = await notifications.markAllAsRead(context(seller));
     expect(all.updated).toBe(1);
     expect(all.snapshots[0].changed[0].isRead).toBe(true);
-    expect(await messages.getUnreadCount(seller.id)).toEqual({
+    expect(await messages.getUnreadCount(context(seller))).toEqual({
       total: 2,
       conversations: 1,
     });
-    expect(await notifications.markAllAsRead(seller.id)).toEqual({
+    expect(await notifications.markAllAsRead(context(seller))).toEqual({
       updated: 0,
       snapshots: [],
     });
@@ -274,13 +292,13 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       .findOneByOrFail({ userId: seller.id });
     await Promise.all([
       send("second"),
-      messages.markAsRead(first.conversationId, seller.id, {
+      messages.markAsRead(first.conversationId, context(seller), {
         throughMessageId: first.id,
       }),
-      notifications.markOneAsRead(seller.id, noti.id),
-      notifications.markAllAsRead(seller.id),
+      notifications.markOneAsRead(context(seller), noti.id),
+      notifications.markAllAsRead(context(seller)),
     ]);
-    expect(await messages.getUnreadCount(seller.id)).toEqual({
+    expect(await messages.getUnreadCount(context(seller))).toEqual({
       total: 1,
       conversations: 1,
     });
@@ -297,7 +315,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       { length: 3 },
       () => `messages/${buyer.id}/${uuidv7()}.png`,
     );
-    const first = await messages.sendMessage(buyer.id, {
+    const first = await messages.sendMessage(context(buyer), {
       postId: post.id,
       images: [keys[0], keys[1], keys[0], keys[2]],
       clientId: uuidv7(),
@@ -306,7 +324,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       keys.map((key) => `https://test.invalid/${key}`),
     );
     await expect(
-      messages.sendMessage(buyer.id, {
+      messages.sendMessage(context(buyer), {
         conversationId: first.conversationId,
         images: [keys[0]],
         clientId: uuidv7(),
@@ -314,19 +332,27 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     ).rejects.toMatchObject({ status: 409 });
     const second = await send("second");
     expect(second.sequence).toBe("2");
-    const page = await messages.findMessages(first.conversationId, seller.id, {
-      limit: 1,
-    });
+    const page = await messages.findMessages(
+      first.conversationId,
+      context(seller),
+      {
+        limit: 1,
+      },
+    );
     expect(page.items.map((m) => m.id)).toEqual([second.id]);
     expect(page.hasMore).toBe(true);
-    const older = await messages.findMessages(first.conversationId, seller.id, {
-      limit: 1,
-      before: page.nextCursor!,
-    });
+    const older = await messages.findMessages(
+      first.conversationId,
+      context(seller),
+      {
+        limit: 1,
+        before: page.nextCursor!,
+      },
+    );
     expect(older.items[0].images).toHaveLength(3);
     expect(older.hasMore).toBe(false);
     await expect(
-      messages.findMessages(first.conversationId, seller.id, {
+      messages.findMessages(first.conversationId, context(seller), {
         before: uuidv7(),
         limit: 1,
       }),
@@ -338,7 +364,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     storage.headObject.mockClear();
     storage.presignGetMany.mockClear();
     await expect(
-      messages.sendMessage(outsider.id, {
+      messages.sendMessage(context(outsider), {
         conversationId: first.conversationId,
         images: [`messages/${outsider.id}/${uuidv7()}.png`],
         clientId: uuidv7(),
@@ -347,11 +373,13 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     expect(storage.headObject).not.toHaveBeenCalled();
     expect(storage.presignGetMany).not.toHaveBeenCalled();
     await expect(
-      messages.findMessages(first.conversationId, outsider.id, { limit: 30 }),
+      messages.findMessages(first.conversationId, context(outsider), {
+        limit: 30,
+      }),
     ).rejects.toMatchObject({ status: 403 });
     await expect(
       notifications.markOneAsRead(
-        outsider.id,
+        context(outsider),
         (
           await ds
             .getRepository(NotificationEntity)
@@ -361,7 +389,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     ).rejects.toMatchObject({ status: 404 });
     storage.headObject.mockResolvedValueOnce(null);
     await expect(
-      messages.sendMessage(buyer.id, {
+      messages.sendMessage(context(buyer), {
         postId: post.id,
         images: [`messages/${buyer.id}/${uuidv7()}.png`],
         clientId: uuidv7(),
@@ -372,7 +400,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
 
   it("self/hidden/deleted post cannot start a chat; existing participants can reply with historical public snapshots", async () => {
     await expect(
-      messages.sendMessage(seller.id, {
+      messages.sendMessage(context(seller), {
         postId: post.id,
         content: "self",
         clientId: uuidv7(),
@@ -394,13 +422,21 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     await ds.getRepository(PostEntity).softDelete(post.id);
     await ds.getRepository(UserEntity).softDelete(buyer.id);
     await expect(send("deleted")).rejects.toMatchObject({ status: 404 });
-    const reply = await messages.sendMessage(seller.id, {
+    const reply = await messages.sendMessage(context(seller), {
       conversationId: first.conversationId,
       content: "still works",
       clientId: uuidv7(),
     });
     expect(reply.sequence).toBe("2");
-    const detail = await conversations.findOne(first.conversationId, seller.id);
+    const sellerCtx: AuthenticatedContext = new AuthorizationService(
+      new CaslAbilityFactory(),
+    ).createAuthenticatedContext({
+      id: seller.id,
+      email: seller.email,
+      fullName: seller.fullName,
+      isAdmin: false,
+    });
+    const detail = await conversations.findOne(first.conversationId, sellerCtx);
     expect(detail).toMatchObject({
       role: "seller",
       counterpart: { id: buyer.id, fullName: buyer.fullName },
@@ -425,14 +461,18 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       { length: 5 },
       () => `messages/${buyer.id}/${uuidv7()}.png`,
     );
-    const latest = await messages.sendMessage(buyer.id, {
+    const latest = await messages.sendMessage(context(buyer), {
       conversationId: first.conversationId,
       images: imageKeys,
       clientId: uuidv7(),
     });
-    const page = await messages.findMessages(first.conversationId, seller.id, {
-      limit: 2,
-    });
+    const page = await messages.findMessages(
+      first.conversationId,
+      context(seller),
+      {
+        limit: 2,
+      },
+    );
     expect(page.items.map((m) => m.id)).toEqual([latest.id, second.id]);
     expect(page.items[0].images).toHaveLength(5);
     expect(page.items[0].createdAt.getTime()).toBe(latest.createdAt.getTime());
@@ -444,14 +484,18 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       Math.abs(latest.createdAt.getTime() - new Date(now).getTime()),
     ).toBeLessThan(10000);
     await send("new arrival");
-    const older = await messages.findMessages(first.conversationId, seller.id, {
-      limit: 2,
-      before: page.nextCursor!,
-    });
+    const older = await messages.findMessages(
+      first.conversationId,
+      context(seller),
+      {
+        limit: 2,
+        before: page.nextCursor!,
+      },
+    );
     expect(older.items.map((m) => m.id)).toEqual([first.id]);
     expect(older.hasMore).toBe(false);
     expect(
-      await messages.findMessages(first.conversationId, seller.id, {
+      await messages.findMessages(first.conversationId, context(seller), {
         limit: 2,
         before: first.id,
       }),
@@ -463,7 +507,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     const clientId = uuidv7();
     const results = await Promise.all(
       Array.from({ length: 10 }, () =>
-        messages.sendMessage(buyer.id, {
+        messages.sendMessage(context(buyer), {
           postId: post.id,
           images: [image],
           clientId,
@@ -488,7 +532,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     );
     const first = await Promise.all(
       posts.map((target) =>
-        messages.sendMessage(buyer.id, {
+        messages.sendMessage(context(buyer), {
           postId: target.id,
           content: "first",
           clientId: uuidv7(),
@@ -496,24 +540,27 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       ),
     );
     const querySpy = jest.spyOn(ds.logger, "logQuery");
-    const list = await notifications.getList(seller.id, { page: 1, limit: 10 });
+    const list = await notifications.getList(context(seller), {
+      page: 1,
+      limit: 10,
+    });
     expect(list.snapshots).toHaveLength(3);
     expect(
       querySpy.mock.calls.filter(([query]) => /^SELECT/i.test(query)).length,
     ).toBeLessThanOrEqual(4);
     querySpy.mockRestore();
     await Promise.all([
-      notifications.markAllAsRead(seller.id),
-      notifications.markAllAsRead(seller.id),
+      notifications.markAllAsRead(context(seller)),
+      notifications.markAllAsRead(context(seller)),
       ...first.map((message) =>
-        messages.sendMessage(buyer.id, {
+        messages.sendMessage(context(buyer), {
           conversationId: message.conversationId,
           content: "concurrent",
           clientId: uuidv7(),
         }),
       ),
     ]);
-    expect(await messages.getUnreadCount(seller.id)).toEqual({
+    expect(await messages.getUnreadCount(context(seller))).toEqual({
       total: 6,
       conversations: 3,
     });
@@ -529,5 +576,29 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
         }),
       ).toBeLessThanOrEqual(1);
     }
+  });
+  it("established replay skips HEAD after soft delete and revoked participation denies before signing", async () => {
+    const key = "messages/" + buyer.id + "/" + uuidv7() + ".png",
+      clientId = uuidv7();
+    const dto = { postId: post.id, images: [key], clientId, content: "replay" };
+    const first = await messages.sendMessage(context(buyer), dto);
+    await ds.getRepository(PostEntity).softDelete(post.id);
+    storage.headObject.mockClear();
+    storage.presignGetMany.mockClear();
+    realtime.emitToConversation.mockClear();
+    const replay = await messages.sendMessage(context(buyer), dto);
+    expect(replay.id).toBe(first.id);
+    expect(replay.sequence).toBe(first.sequence);
+    expect(storage.headObject).not.toHaveBeenCalled();
+    expect(realtime.emitToConversation).not.toHaveBeenCalled();
+    expect(await ds.getRepository(MessageEntity).count()).toBe(1);
+    await ds
+      .getRepository(ConversationEntity)
+      .update(first.conversationId, { buyerId: outsider.id });
+    storage.presignGetMany.mockClear();
+    await expect(
+      messages.sendMessage(context(buyer), dto),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(storage.presignGetMany).not.toHaveBeenCalled();
   });
 });

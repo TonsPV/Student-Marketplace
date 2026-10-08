@@ -7,11 +7,10 @@ import {
   Post,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import {
-  GetUser,
-  ResponseMessage,
-} from "../../common/decorators/customize.decorator";
-import type { UserInterface } from "../../shared/interfaces/user.interface";
+import { ResponseMessage } from "../../common/decorators/customize.decorator";
+import { CheckPolicies } from "../authorization/decorators/check-policies.decorator";
+import { GetAuthorizationContext } from "../authorization/decorators/get-authorization-context.decorator";
+import type { AuthenticatedContext } from "../authorization/authorization.types";
 import { MessagesService } from "./messages.service";
 import { SendMessageDto } from "./dto/send-message.dto";
 
@@ -22,20 +21,25 @@ export class MessagesController {
   constructor(private readonly messagesService: MessagesService) {}
 
   @Post()
+  @CheckPolicies({ action: "sendMessage", subject: "Conversation" })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary:
-      "Gửi tin nhắn (mở chat bằng postId hoặc reply bằng conversationId)",
+      "G?i tin nh?n (m? chat b?ng postId ho?c reply b?ng conversationId)",
   })
   @ResponseMessage("Message sent successfully")
-  sendMessage(@Body() dto: SendMessageDto, @GetUser() user: UserInterface) {
-    return this.messagesService.sendMessage(user.id, dto);
+  sendMessage(
+    @Body() dto: SendMessageDto,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.messagesService.sendMessage(ctx, dto);
   }
 
   @Get("unread-count")
-  @ApiOperation({ summary: "Đếm tin chưa đọc (tổng + số conversation)" })
+  @CheckPolicies({ action: "readMessages", subject: "Conversation" })
+  @ApiOperation({ summary: "�?m tin chua d?c (t?ng + s? conversation)" })
   @ResponseMessage("Unread count retrieved successfully")
-  getUnreadCount(@GetUser() user: UserInterface) {
-    return this.messagesService.getUnreadCount(user.id);
+  getUnreadCount(@GetAuthorizationContext() ctx: AuthenticatedContext) {
+    return this.messagesService.getUnreadCount(ctx);
   }
 }

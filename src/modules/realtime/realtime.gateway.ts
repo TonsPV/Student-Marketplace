@@ -1,3 +1,4 @@
+import { Logger, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import {
   OnGatewayConnection,
@@ -7,50 +8,105 @@ import {
   WebSocketServer,
 } from "@nestjs/websockets";
 import { Namespace, Socket } from "socket.io";
-import { UserInterface } from "../../shared/interfaces/user.interface";
+import {
+  AuthPrincipalService,
+  type VerifiedClaims,
+} from "../../common/auth-principal/auth-principal.service";
+import { SessionRegistryService } from "../../common/session-registry/session-registry.service";
+import type { AuthenticatedPrincipal } from "../authorization/authorization.types";
 import { userRoom } from "./realtime.events";
 import { RealtimeService } from "./realtime.service";
 
 export type AuthSocket = Socket & {
-  data: { user: Pick<UserInterface, "id" | "email"> };
+  data: { user?: AuthenticatedPrincipal; presenceRegistered?: boolean };
 };
-
 @WebSocketGateway({ namespace: "/ws" })
 export class RealtimeGateway
   implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer() server!: Namespace;
-
+  private readonly logger = new Logger(RealtimeGateway.name);
   constructor(
-    private jwt: JwtService,
-    private realtime: RealtimeService,
+    private readonly jwt: JwtService,
+    private readonly realtime: RealtimeService,
+    private readonly principals: AuthPrincipalService,
+    private readonly sessions: SessionRegistryService,
   ) {}
-
   afterInit(server: Namespace) {
     this.realtime.bindServer(server);
-    // Xác thực ngay lúc handshake, nếu fail thì client nhận 'connect_error'
     server.use(async (socket, next) => {
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        if (error) this.sessions.remove(socket.id);
+        next(error);
+      };
+      socket.conn.once("close", () => {
+        this.sessions.remove(socket.id);
+        finish(new Error("UNAUTHORIZED"));
+      });
+      let claims: VerifiedClaims;
       try {
         const raw =
           socket.handshake.auth?.token ??
           socket.handshake.headers.authorization?.replace(/^Bearer\s+/i, "");
-        if (!raw) return next(new Error("UNAUTHORIZED"));
-        const payload = await this.jwt.verifyAsync<UserInterface>(raw);
-        socket.data.user = { id: payload.id, email: payload.email };
-        next();
+        if (typeof raw !== "string" || !raw) throw new UnauthorizedException();
+        claims = await this.jwt.verifyAsync<VerifiedClaims>(raw);
+        const { id, expiresAtMs } =
+          this.principals.validateVerifiedClaims(claims);
+        if (settled || socket.conn.readyState !== "open")
+          return finish(new Error("UNAUTHORIZED"));
+        this.sessions.registerPending(socket, id, expiresAtMs, (reason) =>
+          finish(new Error(reason)),
+        );
       } catch {
-        next(new Error("UNAUTHORIZED"));
+        return finish(new Error("UNAUTHORIZED"));
+      }
+      try {
+        const principal =
+          await this.principals.resolveFromVerifiedClaims(claims);
+        if (settled || !this.sessions.isCurrent(socket.id))
+          return finish(new Error("UNAUTHORIZED"));
+        socket.data.user = principal;
+        finish();
+      } catch (error) {
+        if (!(error instanceof UnauthorizedException))
+          this.logger.error("WebSocket principal lookup failed");
+        finish(
+          new Error(
+            error instanceof UnauthorizedException
+              ? "UNAUTHORIZED"
+              : "INTERNAL_ERROR",
+          ),
+        );
       }
     });
   }
-
   async handleConnection(client: AuthSocket) {
-    const { id } = client.data.user;
-    await client.join(userRoom(id));
-    this.realtime.markOnline(id);
+    const record = this.sessions.activate(client.id);
+    if (!record || !client.data.user) {
+      this.sessions.markInvalid(client.id);
+      client.disconnect(true);
+      return;
+    }
+    try {
+      await client.join(userRoom(record.userId));
+      if (!this.sessions.isEligible(client.id)) {
+        client.disconnect(true);
+        return;
+      }
+      client.data.presenceRegistered = true;
+      this.realtime.markOnline(record.userId);
+    } catch {
+      this.sessions.markInvalid(client.id);
+    }
   }
-
   handleDisconnect(client: AuthSocket) {
-    if (client.data.user) this.realtime.markOffline(client.data.user.id);
+    this.sessions.remove(client.id);
+    if (client.data.presenceRegistered && client.data.user) {
+      client.data.presenceRegistered = false;
+      this.realtime.markOffline(client.data.user.id);
+    }
   }
 }

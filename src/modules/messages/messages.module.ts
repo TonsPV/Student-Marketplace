@@ -10,9 +10,15 @@ import { MessageImageEntity } from "./entities/message-image.entity";
 import { MessageEntity } from "./entities/message.entity";
 import { MessagesController } from "./messages.controller";
 import { MessagesService } from "./messages.service";
+import { AuthPrincipalModule } from "../../common/auth-principal/auth-principal.module";
+import { SessionRegistryModule } from "../../common/session-registry/session-registry.module";
+import { AuthorizationModule } from "../authorization/authorization.module";
 
 @Module({
   imports: [
+    AuthPrincipalModule,
+    SessionRegistryModule,
+    AuthorizationModule,
     TypeOrmModule.forFeature([MessageEntity, MessageImageEntity, UserEntity]),
     ConversationsModule,
     NotificationsModule,

@@ -1,3 +1,5 @@
+import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
+import { CaslAbilityFactory } from "../../src/modules/authorization/casl-ability.factory";
 import "reflect-metadata";
 import { INestApplication } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
@@ -453,14 +455,22 @@ describe("real Nest HTTP / Socket.IO / private R2", () => {
       {
         maxFileSizeBytes: 5242880,
         putSignedUrlExpiresSec: 300,
-        getSignedUrlExpiresSec: 1,
+        // SigV4 timestamps have second precision; 1s can expire during the
+        // first network round trip. Keep enough time to observe a valid GET.
+        getSignedUrlExpiresSec: 5,
       },
+      new AuthorizationService(new CaslAbilityFactory()),
     );
     shortLived.onModuleInit();
     try {
       const signed = await shortLived.presignGet(key);
       expect((await fetchAndDrain(signed.url)).ok).toBe(true);
-      await new Promise((resolve) => setTimeout(resolve, 2100));
+      await new Promise((resolve) =>
+        setTimeout(
+          resolve,
+          Math.max(0, new Date(signed.expiresAt).getTime() - Date.now()) + 1000,
+        ),
+      );
       expect((await fetchAndDrain(signed.url)).status).toBe(403);
       const history = await api(sellerJwt)
         .get(`conversations/${conversationId}/messages`)

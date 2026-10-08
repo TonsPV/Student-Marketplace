@@ -13,6 +13,8 @@ import { UserEntity } from "../../src/modules/user/user.entity";
 import { CategoryEntity } from "../../src/modules/categories/category.entity";
 import { RefreshTokenEntity } from "../../src/modules/refresh-token/refresh-token.entity";
 import { ReportEntity } from "../../src/modules/reports/report.entity";
+import { FavoriteEntity } from "../../src/modules/favorites/favorite.entity";
+import { ReviewEntity } from "../../src/modules/reviews/review.entity";
 
 const ownedSchemas = new Set<string>();
 export function testDatabaseEnv(): Record<string, string | undefined> {
@@ -46,6 +48,8 @@ export function createTestDataSource(): DataSource {
       PostImageEntity,
       RefreshTokenEntity,
       ReportEntity,
+      FavoriteEntity,
+      ReviewEntity,
       ConversationEntity,
       MessageEntity,
       MessageImageEntity,

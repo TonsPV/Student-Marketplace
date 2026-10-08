@@ -1,3 +1,5 @@
+import { AuthorizationService } from "../authorization/authorization.service";
+import type { AuthenticatedContext } from "../authorization/authorization.types";
 import {
   BadRequestException,
   Inject,
@@ -44,6 +46,7 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     private readonly r2: ConfigType<typeof r2Config>,
     @Inject(uploadConfig.KEY)
     private readonly upload: ConfigType<typeof uploadConfig>,
+    private readonly authorization: AuthorizationService,
   ) {}
 
   onModuleInit(): void {
@@ -101,11 +104,16 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
   // ── Presign PUT (FE upload trực tiếp) ─────────────────────────────────────
 
   async presignPut(
-    userId: string,
+    context: AuthenticatedContext,
     purpose: string,
     contentType: string,
     size: number,
   ): Promise<{ uploadUrl: string; key: string; expiresIn: number }> {
+    const userId = context.principal.id;
+    this.authorization.assertCreate(context, "Upload", {
+      ownerId: userId,
+      purpose,
+    });
     if (purpose !== "message") {
       throw new BadRequestException(
         "Unsupported upload purpose (phase 1 supports only 'message')",

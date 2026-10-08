@@ -1,3 +1,5 @@
+import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
+import { CaslAbilityFactory } from "../../src/modules/authorization/casl-ability.factory";
 import "reflect-metadata";
 import { Logger } from "@nestjs/common";
 import { StorageService } from "../../src/modules/storage/storage.service";
@@ -19,6 +21,7 @@ describe("R2 HEAD failure classification (S6)", () => {
         putSignedUrlExpiresSec: 300,
         getSignedUrlExpiresSec: 900,
       },
+      new AuthorizationService(new CaslAbilityFactory()),
     );
     Object.defineProperty(storage, "client", { value: { send } });
     jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);

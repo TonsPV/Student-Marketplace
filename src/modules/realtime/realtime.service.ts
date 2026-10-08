@@ -1,9 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import { Namespace } from "socket.io";
-import { userRoom, conversationRoom } from "./realtime.events";
+import { conversationRoom } from "./realtime.events";
+import { SessionRegistryService } from "../../common/session-registry/session-registry.service";
 
 @Injectable()
 export class RealtimeService {
+  constructor(private readonly sessions: SessionRegistryService) {}
   private server!: Namespace;
   private online = new Map<string, number>(); // userId -> số socket đang mở
 
@@ -12,7 +14,10 @@ export class RealtimeService {
   }
 
   emitToUser(userId: string, event: string, payload: unknown) {
-    this.server.to(userRoom(userId)).emit(event, payload);
+    const ids = this.sessions
+      .eligibleSocketsForUser(userId)
+      .map((r) => r.socketId);
+    if (ids.length) this.server.to(ids).emit(event, payload);
   }
   emitToConversation(
     id: string,
@@ -20,11 +25,10 @@ export class RealtimeService {
     payload: unknown,
     exceptSocketId?: string,
   ) {
-    const target = this.server.to(conversationRoom(id));
-    (exceptSocketId ? target.except(exceptSocketId) : target).emit(
-      event,
-      payload,
-    );
+    const ids = this.sessions
+      .eligibleSocketsForRoom(conversationRoom(id), exceptSocketId)
+      .map((r) => r.socketId);
+    if (ids.length) this.server.to(ids).emit(event, payload);
   }
 
   markOnline(userId: string) {
@@ -35,6 +39,6 @@ export class RealtimeService {
     n <= 0 ? this.online.delete(userId) : this.online.set(userId, n);
   }
   isOnline(userId: string) {
-    return this.online.has(userId);
+    return this.sessions.eligibleSocketsForUser(userId).length > 0;
   }
 }
