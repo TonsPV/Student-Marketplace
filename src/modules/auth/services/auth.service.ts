@@ -17,6 +17,9 @@ import { RegisterUserDto } from "../dto/register.dto";
 import { Response, Request } from "express";
 import { UAParser } from "ua-parser-js";
 import { ChangePasswordDto } from "../dto/change-password.dto";
+import { AuthorizationService } from "../../authorization/authorization.service";
+import type { AuthenticatedContext } from "../../authorization/authorization.types";
+import { toUserProjection } from "../../authorization/subject-projections";
 
 @Injectable()
 export class AuthService {
@@ -26,6 +29,7 @@ export class AuthService {
     private userService: UserService,
     private passwordService: PasswordService,
     private refreshTokenService: RefreshTokenService,
+    private authorization: AuthorizationService,
   ) {}
 
   async validateUser(
@@ -84,7 +88,19 @@ export class AuthService {
     };
   }
 
-  async changePassword(userId: string, dto: ChangePasswordDto) {
+  async changePassword(context: AuthenticatedContext, dto: ChangePasswordDto) {
+    const userId = context.principal.id;
+    const self = await this.userService.findOneById(userId);
+    this.authorization.assertResource(
+      context,
+      "changePassword",
+      "User",
+      toUserProjection({
+        id: self.id,
+        deletedAt: self.deletedAt,
+        isLocked: self.isLocked,
+      }) as unknown as Record<string, unknown>,
+    );
     if (dto.newPassword !== dto.confirmPassword) {
       throw new BadRequestException("Password confirmation does not match");
     }
@@ -108,7 +124,7 @@ export class AuthService {
     }
 
     await this.userService.updatePassword(
-      userId,
+      context,
       this.passwordService.getHashPassword(dto.newPassword),
     );
     await this.refreshTokenService.revokeAllRefreshTokensForUser(userId);

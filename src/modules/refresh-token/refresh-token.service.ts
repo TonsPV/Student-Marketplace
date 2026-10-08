@@ -4,7 +4,14 @@ import { JwtService } from "@nestjs/jwt";
 import ms, { StringValue } from "ms";
 import { RefreshTokenPayload, TokenPayload } from "./refresh-token.type";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Repository, Not, LessThan, MoreThan } from "typeorm";
+import {
+  DataSource,
+  EntityManager,
+  Repository,
+  Not,
+  LessThan,
+  MoreThan,
+} from "typeorm";
 import { DeviceInfo, RefreshTokenEntity } from "./refresh-token.entity";
 import { UserEntity } from "../user/user.entity";
 import { createHash } from "crypto";
@@ -23,6 +30,7 @@ export class RefreshTokenService implements OnModuleInit {
     private tokenRepository: Repository<RefreshTokenEntity>,
     private jwtService: JwtService,
     private configService: ConfigService,
+    private dataSource: DataSource,
   ) {}
 
   onModuleInit() {
@@ -151,9 +159,12 @@ export class RefreshTokenService implements OnModuleInit {
     return { count: result.affected ?? 0 };
   }
 
-  async revokeAllRefreshTokensForUser(userId: string) {
-    const result = await this.tokenRepository.update(
-      { user: { id: userId }, isRevoked: false },
+  async revokeAllRefreshTokensForUser(userId: string, manager?: EntityManager) {
+    const repo = manager
+      ? manager.getRepository(RefreshTokenEntity)
+      : this.tokenRepository;
+    const result = await repo.update(
+      { user: { id: userId } as UserEntity, isRevoked: false },
       { isRevoked: true },
     );
     return { count: result.affected ?? 0 };
@@ -185,10 +196,20 @@ export class RefreshTokenService implements OnModuleInit {
     newTokenHash: string;
     expiresAt: Date;
   }) {
-    return this.tokenRepository.manager.transaction(async (em) => {
+    return this.dataSource.transaction(async (em) => {
+      // Global lock order: user row -> token rows (§10.2).
+      const user = await em
+        .getRepository(UserEntity)
+        .createQueryBuilder("u")
+        .setLock("pessimistic_write")
+        .where("u.id = :id", { id: data.userId })
+        .getOne();
+      if (!user || user.deletedAt || user.isLocked) {
+        throw new BadRequestException("Refresh token invalid!");
+      }
       const repo = em.getRepository(RefreshTokenEntity);
       const oldToken = await repo.findOne({
-        where: { id: data.oldTokenId },
+        where: { id: data.oldTokenId, user: { id: data.userId } },
         select: { id: true, deviceInfo: true },
       });
 
@@ -199,6 +220,7 @@ export class RefreshTokenService implements OnModuleInit {
       const result = await repo.update(
         {
           id: data.oldTokenId,
+          user: { id: data.userId },
           isRevoked: false,
           expiresAt: MoreThan(new Date()),
         },
@@ -236,13 +258,25 @@ export class RefreshTokenService implements OnModuleInit {
     expiresAt: Date;
     deviceInfo?: DeviceInfo;
   }) {
-    const token = this.tokenRepository.create({
-      user: { id: data.userId },
-      tokenHash: data.tokenHash,
-      expiresAt: data.expiresAt,
-      deviceInfo: data.deviceInfo ?? null,
+    return this.dataSource.transaction(async (em) => {
+      const user = await em
+        .getRepository(UserEntity)
+        .createQueryBuilder("u")
+        .setLock("pessimistic_write")
+        .where("u.id = :id", { id: data.userId })
+        .getOne();
+      if (!user || user.deletedAt || user.isLocked) {
+        throw new BadRequestException("Refresh token invalid!");
+      }
+      const repo = em.getRepository(RefreshTokenEntity);
+      const token = repo.create({
+        user: { id: data.userId },
+        tokenHash: data.tokenHash,
+        expiresAt: data.expiresAt,
+        deviceInfo: data.deviceInfo ?? null,
+      });
+      return repo.save(token);
     });
-    return await this.tokenRepository.save(token);
   }
 
   async queryUserIdByToken(refreshToken: string) {

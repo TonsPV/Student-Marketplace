@@ -1,6 +1,6 @@
 import {
+  BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -11,12 +11,19 @@ import { RegisterUserDto } from "../auth/dto/register.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
 import { hashSync } from "bcryptjs";
 import { UpdateLocationDto } from "./dto/update-location.dto";
+import { AuthorizationService } from "../authorization/authorization.service";
+import type {
+  AuthenticatedContext,
+  AuthorizationContext,
+} from "../authorization/authorization.types";
+import { toUserProjection } from "../authorization/subject-projections";
 
 @Injectable()
 export class UserService {
   constructor(
     @InjectRepository(UserEntity)
     private userRepository: Repository<UserEntity>,
+    private readonly authorization: AuthorizationService,
   ) {}
 
   findOneByEmail(email: string) {
@@ -31,21 +38,45 @@ export class UserService {
     return this.userRepository.findOneByOrFail({ id: userId });
   }
 
-  async isAdmin(userId: string) {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      select: { id: true, isAdmin: true, isLocked: true },
+  async updatePassword(context: AuthenticatedContext, password: string) {
+    const user = await this.findOneById(context.principal.id);
+    this.authorization.assertResource(context, "changePassword", "User", {
+      id: user.id,
+      deletedAt: user.deletedAt,
+      isLocked: user.isLocked,
     });
-    return Boolean(user?.isAdmin && !user.isLocked);
-  }
-
-  async updatePassword(userId: string, password: string) {
-    const user = await this.findOneById(userId);
     await this.userRepository.save({ ...user, password });
   }
 
-  async updateDefaultLocation(userId: string, dto: UpdateLocationDto) {
-    await this.findOneById(userId);
+  async updateDefaultLocation(
+    context: AuthenticatedContext,
+    dto: UpdateLocationDto,
+  ) {
+    const command = this.authorization.effectivePatch({ ...dto });
+    if (
+      Object.keys(command).some(
+        (field) => field !== "latitude" && field !== "longitude",
+      )
+    ) {
+      throw new BadRequestException("Unknown location field");
+    }
+    const target = await this.userRepository.findOne({
+      where: { id: context.principal.id },
+      select: { id: true, isLocked: true, deletedAt: true },
+    });
+    if (!target || target.deletedAt) {
+      throw new NotFoundException("User not found");
+    }
+    this.authorization.assertResource(
+      context,
+      "updateLocation",
+      "User",
+      toUserProjection({
+        id: target.id,
+        deletedAt: target.deletedAt,
+        isLocked: target.isLocked,
+      }) as unknown as Record<string, unknown>,
+    );
     await this.userRepository
       .createQueryBuilder()
       .update(UserEntity)
@@ -53,53 +84,84 @@ export class UserService {
         location: () =>
           "ST_SetSRID(ST_MakePoint(:longitude, :latitude), 4326)::geography",
       })
-      .where("id = :userId", { userId })
-      .setParameters(dto)
+      .where("id = :userId", { userId: context.principal.id })
+      .setParameters({ latitude: dto.latitude, longitude: dto.longitude })
       .execute();
 
     return dto;
   }
 
-  async setAccountLocked(userId: string, isLocked: boolean, adminId: string) {
-    if (userId === adminId) {
-      throw new ForbiddenException("Admin cannot lock or unlock own account");
-    }
-
-    await this.findOneById(userId);
-    await this.userRepository.update(userId, { isLocked });
-    return isLocked;
-  }
-
-  async getMyProfile(userId: string) {
-    const user = await this.userRepository.findOneOrFail({
-      where: { id: userId },
-    });
-    return this.toProfile(user);
-  }
-
-  async getUserProfile(userId: string) {
+  async getMyProfile(context: AuthenticatedContext) {
     const user = await this.userRepository.findOne({
-      where: { id: userId },
-      withDeleted: true,
+      where: { id: context.principal.id },
     });
     if (!user || user.deletedAt) {
       throw new NotFoundException("User not found");
     }
+    this.authorization.assertResource(
+      context,
+      "read",
+      "User",
+      toUserProjection({
+        id: user.id,
+        deletedAt: user.deletedAt,
+        isLocked: user.isLocked,
+      }) as unknown as Record<string, unknown>,
+    );
     return this.toProfile(user);
   }
 
-  async updateMyProfile(dto: UpdateUserDto, userId: string) {
-    const user = await this.userRepository.findOneByOrFail({ id: userId });
-
-    const updated = await this.userRepository.save({
-      ...user,
-      ...dto,
+  async getUserProfile(userId: string, context: AuthorizationContext) {
+    const loaded = await this.userRepository.findOne({
+      where: { id: userId },
+      withDeleted: true,
     });
-    return this.toProfile(updated);
+    if (!loaded || loaded.deletedAt) {
+      throw new NotFoundException("User not found");
+    }
+    this.authorization.assertResource(
+      context,
+      "read",
+      "User",
+      toUserProjection({
+        id: loaded.id,
+        deletedAt: loaded.deletedAt,
+        isLocked: loaded.isLocked,
+      }) as unknown as Record<string, unknown>,
+    );
+    return this.toProfile(loaded);
   }
 
-  async softDeleteUser(userId: string) {
-    await this.userRepository.softDelete(userId);
+  async updateMyProfile(dto: UpdateUserDto, context: AuthenticatedContext) {
+    const user = await this.userRepository.findOne({
+      where: { id: context.principal.id },
+      select: { id: true, isLocked: true, deletedAt: true },
+    });
+    if (!user || user.deletedAt) {
+      throw new NotFoundException("User not found");
+    }
+    const projection = toUserProjection({
+      id: user.id,
+      deletedAt: user.deletedAt,
+      isLocked: user.isLocked,
+    }) as unknown as Record<string, unknown>;
+    const patch: Record<string, unknown> = { ...dto };
+    this.authorization.assertUpdateFields(
+      context,
+      "update",
+      "User",
+      projection,
+      patch,
+    );
+    const full = await this.userRepository.findOneByOrFail({
+      id: context.principal.id,
+    });
+    const effective = this.authorization.effectivePatch(patch);
+    const updated = await this.userRepository.save({
+      ...full,
+      ...effective,
+    });
+    return this.toProfile(updated);
   }
 
   private toProfile(user: UserEntity) {

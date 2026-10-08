@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -12,6 +13,14 @@ import { CreateReportDto } from "./dto/create-report.dto";
 import { FilterReportDto } from "./dto/filter-report.dto";
 import { HandleReportAction, HandleReportDto } from "./dto/handle-report.dto";
 import { ReportEntity, ReportStatus, ReportTargetType } from "./report.entity";
+import { AuthorizationService } from "../authorization/authorization.service";
+import type { AuthenticatedContext } from "../authorization/authorization.types";
+import {
+  toPostProjection,
+  toReportProjection,
+  toUserProjection,
+} from "../authorization/subject-projections";
+import { AccountLifecycleService } from "../../common/account-lifecycle/account-lifecycle.service";
 
 @Injectable()
 export class ReportsService {
@@ -23,19 +32,24 @@ export class ReportsService {
     @InjectRepository(UserEntity)
     private readonly usersRepository: Repository<UserEntity>,
     private readonly dataSource: DataSource,
+    private readonly authorization: AuthorizationService,
+    private readonly accountLifecycle: AccountLifecycleService,
   ) {}
 
-  // ── Tạo report ──────────────────────────────────────────────────────────────
-
-  async createReport(dto: CreateReportDto, reporterId: string) {
+  async createReport(dto: CreateReportDto, context: AuthenticatedContext) {
+    this.authorization.assertCreate(context, "Report", {
+      reporterId: context.principal.id,
+      targetType: dto.targetType,
+      targetId: dto.targetId,
+      status: ReportStatus.PENDING,
+    });
+    const reporterId = context.principal.id;
     const { targetType, targetId, reason, description, evidenceUrls } = dto;
 
-    // Kiểm tra target tồn tại
     if (targetType === ReportTargetType.POST) {
       const post = await this.postsRepository.findOneBy({ id: targetId });
       if (!post) throw new NotFoundException("Post not found");
 
-      // Chặn report bài mình
       if (post.sellerId === reporterId) {
         throw new BadRequestException("You cannot report your own post");
       }
@@ -43,13 +57,11 @@ export class ReportsService {
       const user = await this.usersRepository.findOneBy({ id: targetId });
       if (!user) throw new NotFoundException("User not found");
 
-      // Chặn tự report
       if (targetId === reporterId) {
         throw new BadRequestException("You cannot report yourself");
       }
     }
 
-    // Chặn duplicate pending report
     const existing = await this.reportsRepository.findOne({
       where: {
         reporterId,
@@ -77,23 +89,59 @@ export class ReportsService {
     return this.reportsRepository.save(report);
   }
 
-  // ── Admin: xử lý report ─────────────────────────────────────────────────────
-
-  async handleAction(reportId: string, dto: HandleReportDto, adminId: string) {
+  async handleAction(
+    reportId: string,
+    dto: HandleReportDto,
+    context: AuthenticatedContext,
+  ) {
+    this.authorization.assertRoute(context, "resolve", "Report");
     const { action, adminNote } = dto;
 
-    return this.dataSource.transaction(async (manager) => {
-      const report = await manager.findOne(ReportEntity, {
+    let bannedUserId: string | null = null;
+    const result = await this.dataSource.transaction(async (manager) => {
+      const header = await manager.findOne(ReportEntity, {
         where: { id: reportId },
       });
+      if (!header) throw new NotFoundException("Report not found");
+
+      await manager.query(
+        "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+        [`report-moderation:${header.targetType}`, header.targetId],
+      );
+
+      const report = await manager
+        .getRepository(ReportEntity)
+        .createQueryBuilder("r")
+        .setLock("pessimistic_write")
+        .where("r.id = :id", { id: reportId })
+        .getOne();
       if (!report) throw new NotFoundException("Report not found");
+      if (
+        report.targetType !== header.targetType ||
+        report.targetId !== header.targetId
+      ) {
+        throw new BadRequestException("Report target mismatch");
+      }
+
+      this.authorization.assertResource(
+        context,
+        "resolve",
+        "Report",
+        toReportProjection({
+          id: report.id,
+          reporterId: report.reporterId,
+          targetType: report.targetType,
+          targetId: report.targetId,
+          status: report.status,
+        }) as unknown as Record<string, unknown>,
+      );
 
       if (report.status !== ReportStatus.PENDING) {
-        throw new BadRequestException("Báo cáo này đã được xử lý trước đó");
+        throw new BadRequestException("B�o c�o n�y d� du?c x? l� tru?c d�");
       }
 
       const resolvedMeta = {
-        resolvedById: adminId,
+        resolvedById: context.principal.id,
         resolvedAt: new Date(),
         adminNote: adminNote ?? null,
       };
@@ -115,17 +163,31 @@ export class ReportsService {
           );
         }
 
-        const post = await manager.findOne(PostEntity, {
-          where: { id: report.targetId },
-        });
-        if (!post) throw new NotFoundException("Target post not found");
+        const post = await manager
+          .getRepository(PostEntity)
+          .createQueryBuilder("p")
+          .setLock("pessimistic_write")
+          .where("p.id = :id", { id: report.targetId })
+          .getOne();
+        if (!post || post.deletedAt)
+          throw new NotFoundException("Target post not found");
 
-        // Ẩn post
+        this.authorization.assertResource(
+          context,
+          "hide",
+          "Post",
+          toPostProjection({
+            id: post.id,
+            sellerId: post.sellerId,
+            status: post.status,
+            deletedAt: post.deletedAt,
+          }) as unknown as Record<string, unknown>,
+        );
+
         await manager.update(PostEntity, post.id, {
           status: PostStatus.HIDDEN,
         });
 
-        // Resolve toàn bộ pending reports cùng post
         await manager.update(
           ReportEntity,
           {
@@ -147,21 +209,26 @@ export class ReportsService {
             "RESOLVE_BAN_USER action requires a USER report",
           );
         }
+        if (
+          report.targetId.toLowerCase() === context.principal.id.toLowerCase()
+        ) {
+          throw new ForbiddenException(
+            "Admin cannot ban own account via report",
+          );
+        }
 
-        const user = await manager.findOne(UserEntity, {
-          where: { id: report.targetId },
-        });
-        if (!user) throw new NotFoundException("Target user not found");
+        const outcome = await this.accountLifecycle.lockWithManager(
+          manager,
+          context,
+          report.targetId,
+        );
+        bannedUserId = outcome.targetId;
 
-        // Ban user
-        await manager.update(UserEntity, user.id, { isLocked: true });
-
-        // Resolve toàn bộ pending reports cùng user
         await manager.update(
           ReportEntity,
           {
             targetType: ReportTargetType.USER,
-            targetId: user.id,
+            targetId: outcome.targetId,
             status: ReportStatus.PENDING,
           },
           { status: ReportStatus.RESOLVED, ...resolvedMeta },
@@ -174,11 +241,18 @@ export class ReportsService {
 
       throw new BadRequestException("Unknown action");
     });
+
+    if (bannedUserId) {
+      this.accountLifecycle.invalidateCommittedAccount(
+        bannedUserId,
+        "report-ban",
+      );
+    }
+    return result;
   }
 
-  // ── Admin: danh sách reports ─────────────────────────────────────────────────
-
-  async findAllForAdmin(query: FilterReportDto) {
+  async findAllForAdmin(query: FilterReportDto, context: AuthenticatedContext) {
+    this.authorization.assertRoute(context, "read", "Report");
     const { page, limit, status } = query;
 
     const [items, total] = await this.reportsRepository.findAndCount({
@@ -212,9 +286,8 @@ export class ReportsService {
     };
   }
 
-  // ── Admin: chi tiết report ───────────────────────────────────────────────────
-
-  async findOneForAdmin(id: string) {
+  async findOneForAdmin(id: string, context: AuthenticatedContext) {
+    this.authorization.assertRoute(context, "read", "Report");
     const report = await this.reportsRepository.findOne({
       where: { id },
       relations: { reporter: true, resolvedBy: true },
@@ -234,8 +307,19 @@ export class ReportsService {
     });
 
     if (!report) throw new NotFoundException("Report not found");
+    this.authorization.assertResource(
+      context,
+      "read",
+      "Report",
+      toReportProjection({
+        id: report.id,
+        reporterId: report.reporterId,
+        targetType: report.targetType,
+        targetId: report.targetId,
+        status: report.status,
+      }) as unknown as Record<string, unknown>,
+    );
 
-    // Fetch target object
     let target: Record<string, unknown> | null = null;
 
     if (report.targetType === ReportTargetType.POST) {
@@ -261,6 +345,7 @@ export class ReportsService {
           isLocked: true,
         },
       });
+      void toUserProjection;
       target = user as unknown as Record<string, unknown>;
     }
 
