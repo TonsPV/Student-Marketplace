@@ -7,14 +7,18 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  UseGuards,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
 import {
   Public,
   ResponseMessage,
 } from "../../common/decorators/customize.decorator";
-import { AdminGuard } from "../../common/guards/admin.guard";
+import { CheckPolicies } from "../authorization/decorators/check-policies.decorator";
+import { GetAuthorizationContext } from "../authorization/decorators/get-authorization-context.decorator";
+import type {
+  AuthenticatedContext,
+  AuthorizationContext,
+} from "../authorization/authorization.types";
 import { CategoryService } from "./category.service";
 import { CreateCategoryDto } from "./dto/create-category.dto";
 import { UpdateCategoryDto } from "./dto/update-category.dto";
@@ -28,41 +32,51 @@ export class CategoryController {
   @Public()
   @ApiOperation({ summary: "List categories with parent IDs" })
   @ResponseMessage("Categories retrieved successfully")
-  findAll() {
-    return this.categories.findAll();
+  findAll(@GetAuthorizationContext() ctx: AuthorizationContext) {
+    return this.categories.findAll(ctx);
   }
 
   @Get(":id")
   @Public()
   @ResponseMessage("Category retrieved successfully")
-  findOne(@Param("id", new ParseUUIDPipe()) id: string) {
-    return this.categories.findOne(id);
+  findOne(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthorizationContext,
+  ) {
+    return this.categories.findOne(id, ctx);
   }
 
   @Post()
-  @UseGuards(AdminGuard)
+  @CheckPolicies({ action: "create", subject: "Category" })
   @ApiBearerAuth("access-token")
   @ResponseMessage("Category created successfully")
-  create(@Body() dto: CreateCategoryDto) {
-    return this.categories.create(dto);
+  create(
+    @Body() dto: CreateCategoryDto,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.categories.create(dto, ctx);
   }
 
   @Patch(":id")
-  @UseGuards(AdminGuard)
+  @CheckPolicies({ action: "update", subject: "Category" })
   @ApiBearerAuth("access-token")
   @ResponseMessage("Category updated successfully")
   update(
     @Param("id", new ParseUUIDPipe()) id: string,
     @Body() dto: UpdateCategoryDto,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
   ) {
-    return this.categories.update(id, dto);
+    return this.categories.update(id, dto, ctx);
   }
 
   @Delete(":id")
-  @UseGuards(AdminGuard)
+  @CheckPolicies({ action: "delete", subject: "Category" })
   @ApiBearerAuth("access-token")
   @ResponseMessage("Category deleted successfully")
-  remove(@Param("id", new ParseUUIDPipe()) id: string) {
-    return this.categories.remove(id);
+  remove(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.categories.remove(id, ctx);
   }
 }

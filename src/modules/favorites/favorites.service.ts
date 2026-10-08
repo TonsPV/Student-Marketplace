@@ -6,6 +6,8 @@ import { createPaginationMeta } from "../../common/utils/pagination.util";
 import { PostStatus } from "../posts/post.entity";
 import { PostsService } from "../posts/posts.service";
 import { FavoriteEntity } from "./favorite.entity";
+import { AuthorizationService } from "../authorization/authorization.service";
+import type { AuthenticatedContext } from "../authorization/authorization.types";
 
 @Injectable()
 export class FavoritesService {
@@ -13,16 +15,21 @@ export class FavoritesService {
     @InjectRepository(FavoriteEntity)
     private readonly favoritesRepository: Repository<FavoriteEntity>,
     private readonly postsService: PostsService,
+    private readonly authorization: AuthorizationService,
   ) {}
 
-  async create(userId: string, postId: string) {
+  async create(context: AuthenticatedContext, postId: string) {
+    const userId = context.principal.id;
+    this.authorization.assertCreate(context, "Favorite", {
+      userId,
+      postId,
+    });
     await this.postsService.getActivePost(postId);
     const favorite = this.favoritesRepository.create({ userId, postId });
     try {
       const saved = await this.favoritesRepository.save(favorite);
       return { id: saved.id, postId: saved.postId, createdAt: saved.createdAt };
     } catch (error) {
-      // The database constraint also protects against concurrent duplicate requests.
       if (
         error instanceof QueryFailedError &&
         error.driverError.code === "23505" &&
@@ -34,13 +41,16 @@ export class FavoritesService {
     }
   }
 
-  async remove(userId: string, postId: string) {
-    // Idempotent, and scoped to the authenticated user even for unavailable posts.
+  async remove(context: AuthenticatedContext, postId: string) {
+    const userId = context.principal.id;
+    this.authorization.assertRoute(context, "delete", "Favorite");
     await this.favoritesRepository.delete({ userId, postId });
     return { postId };
   }
 
-  async findAll(userId: string, query: PaginationDto) {
+  async findAll(context: AuthenticatedContext, query: PaginationDto) {
+    const userId = context.principal.id;
+    this.authorization.assertRoute(context, "read", "Favorite");
     const [favorites, total] = await this.favoritesRepository
       .createQueryBuilder("favorite")
       .innerJoinAndSelect("favorite.post", "post")
