@@ -1,4 +1,5 @@
 import { DiscoveryModule, MetadataScanner } from "@nestjs/core";
+import { RouteAccessAudit } from "./route-access.audit";
 import { Module } from "@nestjs/common";
 import { CaslAbilityFactory } from "./casl-ability.factory";
 import { AuthorizationService } from "./authorization.service";
@@ -11,6 +12,7 @@ import { PoliciesGuard } from "./guards/policies.guard";
     AuthorizationService,
     PoliciesGuard,
     MetadataScanner,
+    RouteAccessAudit,
   ],
   exports: [CaslAbilityFactory, AuthorizationService, PoliciesGuard],
 })

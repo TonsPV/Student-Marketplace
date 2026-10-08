@@ -33,8 +33,9 @@ export class PoliciesGuard implements CanActivate {
       [AUTHORIZATION_CONTEXT_REQUEST_KEY]?: unknown;
     }>();
     if (!descriptor) {
-      // Keep legacy route guards until all controllers have migrated.
-      return true;
+      throw new InternalServerErrorException(
+        "Missing route authorization metadata",
+      );
     }
     if (descriptor.mode === "public") {
       const guest = this.authorization.createGuestContext();
