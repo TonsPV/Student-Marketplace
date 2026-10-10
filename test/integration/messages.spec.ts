@@ -40,6 +40,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     maxFileSizeBytes: 5242880,
     headObject: jest.fn(),
     presignGetMany: jest.fn(),
+    presignGet: jest.fn(),
   };
   const authorization = new AuthorizationService(new CaslAbilityFactory());
   const context = (user: UserEntity): AuthenticatedContext =>
@@ -61,6 +62,7 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       ds.getRepository(PostEntity),
       ds,
       authorization,
+      storage as unknown as StorageService,
     );
     notifications = new NotificationsService(
       ds.getRepository(NotificationEntity),

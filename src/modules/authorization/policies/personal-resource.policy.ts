@@ -14,5 +14,8 @@ export function definePersonalResourceRules(
   can("delete", "Favorite", { userId: actor.id });
   can("read", "Notification", { userId: actor.id });
   can("markRead", "Notification", { userId: actor.id });
-  can("create", "Upload", { ownerId: actor.id, purpose: "message" });
+  can("create", "Upload", {
+    ownerId: actor.id,
+    purpose: { $in: ["message", "post"] },
+  });
 }

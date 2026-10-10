@@ -5,11 +5,13 @@ import { ConversationEntity } from "./entities/conversation.entity";
 import { ConversationsController } from "./conversations.controller";
 import { ConversationsService } from "./conversations.service";
 import { AuthorizationModule } from "../authorization/authorization.module";
+import { StorageModule } from "../storage/storage.module";
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ConversationEntity, PostEntity]),
     AuthorizationModule,
+    StorageModule,
   ],
   controllers: [ConversationsController],
   providers: [ConversationsService],

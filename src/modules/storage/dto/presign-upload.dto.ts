@@ -5,10 +5,7 @@ import {
   SUPPORTED_UPLOAD_PURPOSES,
 } from "../storage.constants";
 
-/**
- * Phase 1 chỉ hỗ trợ purpose 'message'. Các purpose khác (post/avatar)
- * migrate riêng khi có spec consumer (spec §10.2, §10.5).
- */
+/** Upload directly to R2, then attach the returned key to a message or post. */
 export class PresignUploadDto {
   @ApiProperty({ enum: SUPPORTED_UPLOAD_PURPOSES, example: "message" })
   @IsString()

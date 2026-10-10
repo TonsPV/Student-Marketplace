@@ -199,7 +199,7 @@ describe("real Nest HTTP / Socket.IO / private R2", () => {
       .expect(403);
     await api(buyerJwt)
       .post("uploads/presign")
-      .send({ purpose: "post", contentType: "image/png", size: 1 })
+      .send({ purpose: "avatar", contentType: "image/png", size: 1 })
       .expect(400);
     for (const size of [0, -1, 0.5, 5242881])
       await api(buyerJwt)
@@ -455,9 +455,9 @@ describe("real Nest HTTP / Socket.IO / private R2", () => {
       {
         maxFileSizeBytes: 5242880,
         putSignedUrlExpiresSec: 300,
-        // SigV4 timestamps have second precision; 1s can expire during the
-        // first network round trip. Keep enough time to observe a valid GET.
-        getSignedUrlExpiresSec: 5,
+        // Allow network latency and second-precision SigV4 timestamps before
+        // checking expiration. This changes only the test URL's lifetime.
+        getSignedUrlExpiresSec: 15,
       },
       new AuthorizationService(new CaslAbilityFactory()),
     );

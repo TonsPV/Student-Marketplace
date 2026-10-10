@@ -19,6 +19,7 @@ import {
 import { AuthorizationService } from "../authorization/authorization.service";
 import type { AuthenticatedContext } from "../authorization/authorization.types";
 import { toConversationProjection } from "../authorization/subject-projections";
+import { StorageService } from "../storage/storage.service";
 
 export type ConversationParticipantAction =
   "read" | "readMessages" | "sendMessage" | "markRead" | "join" | "type";
@@ -32,6 +33,7 @@ export class ConversationsService {
     private readonly postsRepository: Repository<PostEntity>,
     private readonly dataSource: DataSource,
     private readonly authorization: AuthorizationService,
+    private readonly storage: StorageService,
   ) {}
 
   async getForAction(
@@ -295,19 +297,32 @@ export class ConversationsService {
       [convIds, userId],
     )) as Array<{ conversation_id: string; cnt: number }>;
     const thumbRows = (await manager.query(
-      `SELECT DISTINCT ON (post_id) post_id, url
+      `SELECT DISTINCT ON (post_id) post_id, url, storage_key
            FROM post_image
           WHERE post_id = ANY($1::uuid[])
           ORDER BY post_id, id`,
       [postIds],
-    )) as Array<{ post_id: string; url: string }>;
+    )) as Array<{
+      post_id: string;
+      url: string | null;
+      storage_key: string | null;
+    }>;
 
     const postById = new Map(posts.map((p) => [p.id, p]));
     const userById = new Map(users.map((u) => [u.id, u]));
     const unreadByConv = new Map(
       unreadRows.map((r) => [r.conversation_id, Number(r.cnt)]),
     );
-    const thumbByPost = new Map(thumbRows.map((r) => [r.post_id, r.url]));
+    const thumbByPost = new Map(
+      await Promise.all(
+        thumbRows.map(async (r): Promise<[string, string | null]> => [
+          r.post_id,
+          r.storage_key
+            ? (await this.storage.presignGet(r.storage_key)).url
+            : r.url,
+        ]),
+      ),
+    );
 
     return convs.map((conv) => {
       const isBuyer = conv.buyerId === userId;
