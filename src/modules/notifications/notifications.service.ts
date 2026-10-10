@@ -1,3 +1,5 @@
+import { AuthorizationService } from "../authorization/authorization.service";
+import type { AuthenticatedContext } from "../authorization/authorization.types";
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { DataSource, EntityManager, In, Repository } from "typeorm";
@@ -34,6 +36,7 @@ export class NotificationsService {
     private readonly dataSource: DataSource,
     private readonly conversationsService: ConversationsService,
     private readonly realtime: RealtimeService,
+    private readonly authorization: AuthorizationService,
   ) {}
 
   // ── Pure mapper ────────────────────────────────────────────────────────────
@@ -211,9 +214,11 @@ export class NotificationsService {
   // ── Manual reads N3/N4 (không đổi isRead/watermark của messages) ───────────
 
   async markOneAsRead(
-    userId: string,
+    context: AuthenticatedContext,
     notificationId: string,
   ): Promise<{ updated: number; snapshots: NotificationSnapshot[] }> {
+    const userId = context.principal.id;
+    this.authorization.assertRoute(context, "markRead", "Notification");
     const owned = await this.notificationsRepository.findOneBy({
       id: notificationId,
       userId,
@@ -221,6 +226,10 @@ export class NotificationsService {
     if (!owned) {
       throw new NotFoundException("Notification not found");
     }
+    this.authorization.assertResource(context, "markRead", "Notification", {
+      id: owned.id,
+      userId: owned.userId,
+    });
     if (owned.type !== NotificationType.NEW_MESSAGE || !owned.refId) {
       const updated = await this.notificationsRepository.update(
         { id: owned.id, userId, isRead: false },
@@ -231,10 +240,11 @@ export class NotificationsService {
 
     const conversationId = owned.refId;
     const result = await this.dataSource.transaction(async (manager) => {
-      await this.conversationsService.lockForParticipant(
+      await this.conversationsService.lockForAction(
         manager,
         conversationId,
-        userId,
+        context,
+        "read",
       );
       const row = await manager
         .getRepository(NotificationEntity)
@@ -295,8 +305,10 @@ export class NotificationsService {
   }
 
   async markAllAsRead(
-    userId: string,
+    context: AuthenticatedContext,
   ): Promise<{ updated: number; snapshots: NotificationSnapshot[] }> {
+    const userId = context.principal.id;
+    this.authorization.assertRoute(context, "markRead", "Notification");
     const targets = (await this.notificationsRepository.query(
       `SELECT DISTINCT ref_id FROM notifications
         WHERE user_id = $1 AND type = 'new_message'
@@ -316,10 +328,11 @@ export class NotificationsService {
       }> = [];
       // Lock theo id tăng dần, cùng order với writes (spec §5.1).
       for (const conversationId of conversationIds) {
-        await this.conversationsService.lockForParticipant(
+        await this.conversationsService.lockForAction(
           manager,
           conversationId,
-          userId,
+          context,
+          "read",
         );
         const unread = await this.findUnread(manager, userId, conversationId);
         if (!unread) continue;
@@ -374,7 +387,9 @@ export class NotificationsService {
 
   // ── N1/N2 reads ────────────────────────────────────────────────────────────
 
-  async getList(userId: string, query: PaginationDto) {
+  async getList(context: AuthenticatedContext, query: PaginationDto) {
+    const userId = context.principal.id;
+    this.authorization.assertRoute(context, "read", "Notification");
     const { page, limit } = query;
     const result = await this.dataSource.transaction(
       "REPEATABLE READ",
@@ -436,7 +451,11 @@ export class NotificationsService {
     };
   }
 
-  async getUnreadCount(userId: string): Promise<{ total: number }> {
+  async getUnreadCount(
+    context: AuthenticatedContext,
+  ): Promise<{ total: number }> {
+    const userId = context.principal.id;
+    this.authorization.assertRoute(context, "read", "Notification");
     const total = await this.notificationsRepository.countBy({
       userId,
       isRead: false,

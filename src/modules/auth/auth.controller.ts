@@ -22,6 +22,9 @@ import { RegisterUserDto } from "./dto/register.dto";
 import { GoogleAuthGuard } from "../../common/guards/google-auth.guard";
 import { UserInterface } from "../../shared/interfaces/user.interface";
 import { ChangePasswordDto } from "./dto/change-password.dto";
+import { CheckPolicies } from "../authorization/decorators/check-policies.decorator";
+import { GetAuthorizationContext } from "../authorization/decorators/get-authorization-context.decorator";
+import type { AuthenticatedContext } from "../authorization/authorization.types";
 
 type CookieRequest = Omit<Request, "cookies"> & {
   cookies: Record<string, string | undefined>;
@@ -108,13 +111,14 @@ export class AuthController {
   }
 
   @Post("/change-password")
+  @CheckPolicies({ action: "changePassword", subject: "User" })
   @ResponseMessage("Change password successfully!")
   @ApiBearerAuth("access-token")
   async changePassword(
-    @GetUser() user: UserInterface,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
     @Body() dto: ChangePasswordDto,
   ) {
-    return this.authService.changePassword(user.id, dto);
+    return this.authService.changePassword(ctx, dto);
   }
 
   @Get("/google/login")

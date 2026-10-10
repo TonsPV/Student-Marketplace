@@ -69,6 +69,9 @@ type CommittedReadEvents = {
   recipientNotiSnapshot: NotificationSnapshot;
 };
 
+import { AuthorizationService } from "../authorization/authorization.service";
+import type { AuthenticatedContext } from "../authorization/authorization.types";
+
 const PG_UNIQUE_VIOLATION = "23505";
 
 @Injectable()
@@ -81,38 +84,43 @@ export class MessagesService {
     private readonly notificationsService: NotificationsService,
     private readonly storageService: StorageService,
     private readonly realtime: RealtimeService,
+    private readonly authorization: AuthorizationService,
   ) {}
 
   // ── Public REST API ────────────────────────────────────────────────────────
 
   async sendMessage(
-    senderId: string,
+    context: AuthenticatedContext,
     dto: SendMessageDto,
   ): Promise<MessageResponseDto> {
     const input = this.normalizeSend(dto, true);
-    return this.executeSend(senderId, input);
+    return this.executeSend(context, input);
   }
 
   /** E5 alias deprecated: conversationId lấy từ path, clientId optional. */
   async sendConversationMessage(
     conversationId: string,
-    senderId: string,
+    context: AuthenticatedContext,
     dto: SendConversationMessageDto,
   ): Promise<MessageResponseDto> {
     if (!isUUID(conversationId)) {
       throw new BadRequestException("Invalid conversation id");
     }
     const input = this.normalizeSend({ ...dto, conversationId }, false);
-    return this.executeSend(senderId, input);
+    return this.executeSend(context, input);
   }
 
   async findMessages(
     conversationId: string,
-    userId: string,
+    context: AuthenticatedContext,
     query: GetMessagesQueryDto,
   ): Promise<PaginatedMessagesDto> {
     const limit = query.limit ?? 30;
-    await this.conversationsService.assertParticipant(conversationId, userId);
+    await this.conversationsService.getForAction(
+      conversationId,
+      context,
+      "readMessages",
+    );
 
     let beforeSequence: string | null = null;
     if (query.before !== undefined) {
@@ -173,7 +181,7 @@ export class MessagesService {
 
   async markAsRead(
     conversationId: string,
-    userId: string,
+    context: AuthenticatedContext,
     dto: MarkReadDto,
   ): Promise<{
     updated: number;
@@ -181,15 +189,17 @@ export class MessagesService {
     readThroughSequence: string;
     stateVersion: string;
   }> {
+    const userId = context.principal.id;
     if (!dto || !isUUID(dto.throughMessageId)) {
       throw new BadRequestException("Invalid throughMessageId");
     }
 
     const committed = await this.dataSource.transaction(async (manager) => {
-      const locked = await this.conversationsService.lockForParticipant(
+      const locked = await this.conversationsService.lockForAction(
         manager,
         conversationId,
-        userId,
+        context,
+        "markRead",
       );
       const target = (await manager.query(
         `SELECT id, sequence FROM messages
@@ -330,9 +340,9 @@ export class MessagesService {
   }
 
   async getUnreadCount(
-    userId: string,
+    context: AuthenticatedContext,
   ): Promise<{ total: number; conversations: number }> {
-    return this.conversationsService.getUnreadCount(userId);
+    return this.conversationsService.getUnreadCount(context);
   }
 
   // ── Normalize + preflight (ngoài transaction) ──────────────────────────────
@@ -429,19 +439,21 @@ export class MessagesService {
    * giữ lại để kiểm tra idempotency dưới advisory lock trước khi kết luận.
    */
   private async preflight(
-    senderId: string,
+    context: AuthenticatedContext,
     input: NormalizedSend,
   ): Promise<{
     sellerId: string | null;
     prepared: { urls: string[]; expiresAt: string | null };
     error: Error | null;
   }> {
+    const senderId = context.principal.id;
     try {
       let sellerId: string | null = null;
       if (input.conversationId) {
-        await this.conversationsService.assertParticipant(
+        await this.conversationsService.getForAction(
           input.conversationId,
-          senderId,
+          context,
+          "sendMessage",
         );
       }
       if (input.postId) {
@@ -505,10 +517,28 @@ export class MessagesService {
   // ── Send transaction ───────────────────────────────────────────────────────
 
   private async executeSend(
-    senderId: string,
+    context: AuthenticatedContext,
     input: NormalizedSend,
   ): Promise<MessageResponseDto> {
-    const preflight = await this.preflight(senderId, input);
+    const senderId = context.principal.id;
+    // Established replays authorize and resign under the idempotency lock,
+    // without HEAD checks against mutable upload/post state.
+    if (
+      input.clientId &&
+      (await this.dataSource
+        .getRepository(MessageEntity)
+        .existsBy({ senderId, clientId: input.clientId }))
+    ) {
+      const replay = await this.dataSource.transaction(async (manager) => {
+        await manager.query(
+          "SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))",
+          [senderId, input.clientId],
+        );
+        return this.findReplay(manager, context, input);
+      });
+      if (replay) return replay;
+    }
+    const preflight = await this.preflight(context, input);
 
     const committed = await this.dataSource.transaction(async (manager) => {
       // 1. Advisory lock theo (sender, clientId) + authoritative replay check.
@@ -519,7 +549,7 @@ export class MessagesService {
           `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`,
           [senderId, input.clientId],
         );
-        const replay = await this.findReplay(manager, senderId, input);
+        const replay = await this.findReplay(manager, context, input);
         if (replay) return { replay: true as const, dto: replay, events: null };
       }
 
@@ -531,7 +561,7 @@ export class MessagesService {
       let lockedConv: ConversationEntity;
       if (input.postId) {
         const postRows = (await manager.query(
-          `SELECT id, seller_id, status FROM posts
+          `SELECT id, seller_id, status, deleted_at FROM posts
             WHERE id = $1 AND deleted_at IS NULL FOR SHARE`,
           [input.postId],
         )) as Array<{ id: string; seller_id: string; status: PostStatus }>;
@@ -544,6 +574,11 @@ export class MessagesService {
             "You cannot start a conversation about your own post",
           );
         }
+        this.authorization.assertCreate(context, "Conversation", {
+          buyerId: senderId,
+          sellerId: post.seller_id,
+          postId: input.postId,
+        });
         const created =
           await this.conversationsService.findOrCreateConversation(
             input.postId,
@@ -551,18 +586,20 @@ export class MessagesService {
             post.seller_id,
             manager,
           );
-        const locked = await this.conversationsService.lockForParticipant(
+        const locked = await this.conversationsService.lockForAction(
           manager,
           created.id,
-          senderId,
+          context,
+          "sendMessage",
         );
         conversationId = locked.id;
         lockedConv = locked;
       } else {
-        const locked = await this.conversationsService.lockForParticipant(
+        const locked = await this.conversationsService.lockForAction(
           manager,
           input.conversationId as string,
-          senderId,
+          context,
+          "sendMessage",
         );
         conversationId = locked.id;
         lockedConv = locked;
@@ -727,9 +764,10 @@ export class MessagesService {
   /** Replay check dưới advisory lock: cùng key/payload → message cũ + URL mới. */
   private async findReplay(
     manager: EntityManager,
-    senderId: string,
+    context: AuthenticatedContext,
     input: NormalizedSend,
   ): Promise<MessageResponseDto | null> {
+    const senderId = context.principal.id;
     const rows = (await manager.query(
       `SELECT id, conversation_id, sender_id, sequence, content, client_id,
               is_read, created_at
@@ -750,9 +788,16 @@ export class MessagesService {
 
     // Authorize + resolve logical target (postId/conversationId cùng
     // conversation là cùng target — không so sánh hình thức field).
-    await this.conversationsService.assertParticipant(
+    await this.conversationsService.getForAction(
       existing.conversation_id,
-      senderId,
+      context,
+      "sendMessage",
+      manager,
+    );
+    await this.conversationsService.getForAction(
+      existing.conversation_id,
+      context,
+      "readMessages",
       manager,
     );
     let targetConversationId: string;

@@ -9,12 +9,11 @@ import {
   Query,
 } from "@nestjs/common";
 import { ApiBearerAuth, ApiOperation, ApiTags } from "@nestjs/swagger";
-import {
-  GetUser,
-  ResponseMessage,
-} from "../../common/decorators/customize.decorator";
+import { ResponseMessage } from "../../common/decorators/customize.decorator";
+import { CheckPolicies } from "../authorization/decorators/check-policies.decorator";
+import { GetAuthorizationContext } from "../authorization/decorators/get-authorization-context.decorator";
+import type { AuthenticatedContext } from "../authorization/authorization.types";
 import { PaginationDto } from "../../common/dto/pagination.dto";
-import type { UserInterface } from "../../shared/interfaces/user.interface";
 import { NotificationsService } from "./notifications.service";
 
 @ApiTags("Notifications")
@@ -24,35 +23,42 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get()
-  @ApiOperation({ summary: "List notifications (kèm snapshots đồng bộ)" })
+  @CheckPolicies({ action: "read", subject: "Notification" })
+  @ApiOperation({ summary: "List notifications" })
   @ResponseMessage("Notifications retrieved successfully")
-  getList(@GetUser() user: UserInterface, @Query() query: PaginationDto) {
-    return this.notificationsService.getList(user.id, query);
+  getList(
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+    @Query() query: PaginationDto,
+  ) {
+    return this.notificationsService.getList(ctx, query);
   }
 
   @Get("unread-count")
-  @ApiOperation({ summary: "Đếm notification chưa đọc" })
+  @CheckPolicies({ action: "read", subject: "Notification" })
+  @ApiOperation({ summary: "Count unread notifications" })
   @ResponseMessage("Unread count retrieved successfully")
-  getUnreadCount(@GetUser() user: UserInterface) {
-    return this.notificationsService.getUnreadCount(user.id);
+  getUnreadCount(@GetAuthorizationContext() ctx: AuthenticatedContext) {
+    return this.notificationsService.getUnreadCount(ctx);
   }
 
   @Patch("read-all")
+  @CheckPolicies({ action: "markRead", subject: "Notification" })
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Đánh dấu tất cả notification đã đọc" })
+  @ApiOperation({ summary: "Mark all notifications as read" })
   @ResponseMessage("Notifications marked as read")
-  markAllAsRead(@GetUser() user: UserInterface) {
-    return this.notificationsService.markAllAsRead(user.id);
+  markAllAsRead(@GetAuthorizationContext() ctx: AuthenticatedContext) {
+    return this.notificationsService.markAllAsRead(ctx);
   }
 
   @Patch(":id/read")
+  @CheckPolicies({ action: "markRead", subject: "Notification" })
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: "Đánh dấu một notification đã đọc" })
+  @ApiOperation({ summary: "Mark one notification as read" })
   @ResponseMessage("Notification marked as read")
   markOneAsRead(
     @Param("id", new ParseUUIDPipe()) id: string,
-    @GetUser() user: UserInterface,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
   ) {
-    return this.notificationsService.markOneAsRead(user.id, id);
+    return this.notificationsService.markOneAsRead(ctx, id);
   }
 }

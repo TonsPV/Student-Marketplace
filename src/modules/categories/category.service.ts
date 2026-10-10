@@ -9,21 +9,35 @@ import { EntityManager, QueryFailedError, Repository } from "typeorm";
 import { CategoryEntity } from "./category.entity";
 import { CreateCategoryDto } from "./dto/create-category.dto";
 import { UpdateCategoryDto } from "./dto/update-category.dto";
+import { AuthorizationService } from "../authorization/authorization.service";
+import type {
+  AuthenticatedContext,
+  AuthorizationContext,
+} from "../authorization/authorization.types";
 
 @Injectable()
 export class CategoryService {
   constructor(
     @InjectRepository(CategoryEntity)
     private readonly categories: Repository<CategoryEntity>,
+    private readonly authorization: AuthorizationService,
   ) {}
 
-  findAll() {
+  async findAll(context: AuthorizationContext) {
+    {
+      this.authorization.assertRoute(context, "read", "Category");
+    }
     return this.categories.find({ order: { name: "ASC", id: "ASC" } });
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, context: AuthorizationContext) {
     const category = await this.categories.findOneBy({ id: id.toLowerCase() });
     if (!category) throw new NotFoundException("Category not found");
+    {
+      this.authorization.assertResource(context, "read", "Category", {
+        id: category.id,
+      });
+    }
     return category;
   }
 
@@ -34,7 +48,6 @@ export class CategoryService {
       return await this.categories.manager.transaction(
         "READ COMMITTED",
         async (manager: EntityManager) => {
-          // Serialize hierarchy edits across API instances to prevent concurrent cycles.
           await manager.query("SELECT pg_advisory_xact_lock(1937006964, 1)");
           return action(manager.getRepository(CategoryEntity));
         },
@@ -74,7 +87,8 @@ export class CategoryService {
     }
   }
 
-  create(dto: CreateCategoryDto) {
+  create(dto: CreateCategoryDto, context: AuthenticatedContext) {
+    this.authorization.assertCreate(context, "Category", {});
     return this.mutate(async (repository) => {
       const parentId = dto.parentId?.toLowerCase() ?? null;
       await this.validateParent(repository, parentId);
@@ -84,10 +98,18 @@ export class CategoryService {
     });
   }
 
-  update(id: string, dto: UpdateCategoryDto) {
+  update(id: string, dto: UpdateCategoryDto, context: AuthenticatedContext) {
     return this.mutate(async (repository) => {
       const category = await repository.findOneBy({ id: id.toLowerCase() });
       if (!category) throw new NotFoundException("Category not found");
+      const patch: Record<string, unknown> = { ...dto };
+      this.authorization.assertUpdateFields(
+        context,
+        "update",
+        "Category",
+        { id: category.id },
+        patch,
+      );
       if (dto.parentId !== undefined) {
         await this.validateParent(repository, dto.parentId, id);
         category.parentId = dto.parentId?.toLowerCase() ?? null;
@@ -97,10 +119,13 @@ export class CategoryService {
     });
   }
 
-  remove(id: string) {
+  remove(id: string, context: AuthenticatedContext) {
     return this.mutate(async (repository) => {
       const category = await repository.findOneBy({ id: id.toLowerCase() });
       if (!category) throw new NotFoundException("Category not found");
+      this.authorization.assertResource(context, "delete", "Category", {
+        id: category.id,
+      });
       if (await repository.existsBy({ parentId: id.toLowerCase() }))
         throw new ConflictException("Delete child categories first");
       await repository.delete(id.toLowerCase());

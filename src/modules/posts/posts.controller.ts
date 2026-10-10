@@ -13,11 +13,15 @@ import { ApiBearerAuth, ApiBody, ApiTags } from "@nestjs/swagger";
 import { ParseUUIDPipe } from "@nestjs/common";
 
 import {
-  GetUser,
   Public,
   ResponseMessage,
 } from "../../common/decorators/customize.decorator";
-import { UserInterface } from "../../shared/interfaces/user.interface";
+import { CheckPolicies } from "../authorization/decorators/check-policies.decorator";
+import { GetAuthorizationContext } from "../authorization/decorators/get-authorization-context.decorator";
+import type {
+  AuthenticatedContext,
+  AuthorizationContext,
+} from "../authorization/authorization.types";
 import { CreatePostDto } from "./dto/create-post.dto";
 import { FindPostsDto } from "./dto/find-posts.dto";
 import { SearchPostsDto } from "./dto/search-posts.dto";
@@ -29,78 +33,102 @@ import { PostsService } from "./posts.service";
 export class PostsController {
   constructor(private readonly postsService: PostsService) {}
 
-  // Tạo bài viết
   @Post()
+  @CheckPolicies({ action: "create", subject: "Post" })
   @ApiBearerAuth("access-token")
   @ApiBody({ type: CreatePostDto })
   @ResponseMessage("Post created successfully!")
-  create(@Body() dto: CreatePostDto, @GetUser() user: UserInterface) {
-    return this.postsService.create(dto, user.id);
+  create(
+    @Body() dto: CreatePostDto,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.postsService.create(dto, ctx);
   }
 
-  // Lấy danh sách bài viết
   @Get()
   @Public()
   @ResponseMessage("Posts retrieved successfully!")
-  findAll(@Query() query: FindPostsDto) {
-    return this.postsService.findAll(query);
+  findAll(
+    @Query() query: FindPostsDto,
+    @GetAuthorizationContext() ctx: AuthorizationContext,
+  ) {
+    return this.postsService.findAll(query, ctx);
   }
 
-  // Lấy chi tiết bài viết
   @Get("me")
+  @CheckPolicies({ action: "read", subject: "Post" })
   @ApiBearerAuth("access-token")
   @ResponseMessage("My posts retrieved successfully!")
-  findMyPosts(@GetUser() user: UserInterface, @Query() query: FindPostsDto) {
-    return this.postsService.findMyPosts(user.id, query);
+  findMyPosts(
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+    @Query() query: FindPostsDto,
+  ) {
+    return this.postsService.findMyPosts(ctx, query);
   }
 
   @Get("search")
   @Public()
   @ResponseMessage("Posts found successfully!")
-  search(@Query() query: SearchPostsDto) {
-    return this.postsService.search(query);
+  search(
+    @Query() query: SearchPostsDto,
+    @GetAuthorizationContext() ctx: AuthorizationContext,
+  ) {
+    return this.postsService.search(query, ctx);
   }
 
   @Get(":id")
   @Public()
   @ResponseMessage("Post retrieved successfully!")
-  findOne(@Param("id", new ParseUUIDPipe()) id: string) {
-    return this.postsService.findOne(id);
+  findOne(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthorizationContext,
+  ) {
+    return this.postsService.findOne(id, ctx);
   }
 
-  // Cập nhật bài viết
   @Patch(":id")
+  @CheckPolicies({ action: "update", subject: "Post" })
   @ApiBearerAuth("access-token")
   @ApiBody({ type: UpdatePostDto })
   @ResponseMessage("Post updated successfully!")
   update(
-    @Param("id") id: string,
+    @Param("id", new ParseUUIDPipe()) id: string,
     @Body() dto: UpdatePostDto,
-    @GetUser() user: UserInterface,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
   ) {
-    return this.postsService.update(id, dto, user.id);
+    return this.postsService.update(id, dto, ctx);
   }
 
-  // Đánh dấu đã bán
   @Patch(":id/sold")
+  @CheckPolicies({ action: "markSold", subject: "Post" })
   @ApiBearerAuth("access-token")
   @ResponseMessage("Post marked as sold successfully!")
-  markAsSold(@Param("id") id: string, @GetUser() user: UserInterface) {
-    return this.postsService.markAsSold(id, user.id);
+  markAsSold(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.postsService.markAsSold(id, ctx);
   }
 
-  // Xóa mềm bài viết
   @Delete(":id")
+  @CheckPolicies({ action: "delete", subject: "Post" })
   @ApiBearerAuth("access-token")
   @ResponseMessage("Post deleted successfully!")
-  remove(@Param("id") id: string, @GetUser() user: UserInterface) {
-    return this.postsService.remove(id, user.id);
+  remove(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.postsService.remove(id, ctx);
   }
 
   @Patch(":id/restore")
+  @CheckPolicies({ action: "restore", subject: "Post" })
   @ApiBearerAuth("access-token")
   @ResponseMessage("Post restored successfully!")
-  restore(@Param("id", new ParseUUIDPipe()) id: string, @GetUser() user: UserInterface) {
-    return this.postsService.restore(id, user.id);
+  restore(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.postsService.restore(id, ctx);
   }
 }

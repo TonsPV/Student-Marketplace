@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -17,6 +16,12 @@ import {
   ConversationSnapshotDto,
   ConversationUpdatedPayload,
 } from "./dto/conversation-response.dto";
+import { AuthorizationService } from "../authorization/authorization.service";
+import type { AuthenticatedContext } from "../authorization/authorization.types";
+import { toConversationProjection } from "../authorization/subject-projections";
+
+export type ConversationParticipantAction =
+  "read" | "readMessages" | "sendMessage" | "markRead" | "join" | "type";
 
 @Injectable()
 export class ConversationsService {
@@ -26,76 +31,65 @@ export class ConversationsService {
     @InjectRepository(PostEntity)
     private readonly postsRepository: Repository<PostEntity>,
     private readonly dataSource: DataSource,
+    private readonly authorization: AuthorizationService,
   ) {}
 
-  // ── Authorization helpers (public, dùng bởi Messages/Notifications/Gateway) ──
-  // Chỉ kiểm tra conversation tồn tại và user là buyer/seller.
-  // Tuyệt đối KHÔNG query Post.status hay Post.deletedAt ở đây.
-
-  async assertParticipant(
-    conversationId: string,
-    userId: string,
+  async getForAction(
+    id: string,
+    context: AuthenticatedContext,
+    action: ConversationParticipantAction,
     manager?: EntityManager,
   ): Promise<ConversationEntity> {
     const repo = manager
       ? manager.getRepository(ConversationEntity)
       : this.conversationsRepository;
-    const conv = await repo.findOneBy({ id: conversationId });
+    const conv = await repo.findOneBy({ id });
     if (!conv) throw new NotFoundException("Conversation not found");
-    if (conv.buyerId !== userId && conv.sellerId !== userId) {
-      throw new ForbiddenException(
-        "You are not a participant of this conversation",
-      );
-    }
+    this.authorization.assertResource(
+      context,
+      action,
+      "Conversation",
+      toConversationProjection({
+        id: conv.id,
+        buyerId: conv.buyerId,
+        sellerId: conv.sellerId,
+        postId: conv.postId,
+      }) as unknown as Record<string, unknown>,
+    );
     return conv;
   }
 
-  /**
-   * Khóa row conversation (SELECT ... FOR UPDATE, không join relations
-   * trong câu khóa). Chỉ gọi trong transaction.
-   */
-  async lockForParticipant(
+  async lockForAction(
     manager: EntityManager,
-    conversationId: string,
-    userId: string,
+    id: string,
+    context: AuthenticatedContext,
+    action: ConversationParticipantAction,
   ): Promise<ConversationEntity> {
     const conv = await manager
       .getRepository(ConversationEntity)
       .createQueryBuilder("conv")
       .setLock("pessimistic_write")
-      .where("conv.id = :id", { id: conversationId })
+      .where("conv.id = :id", { id })
       .getOne();
     if (!conv) throw new NotFoundException("Conversation not found");
-    if (conv.buyerId !== userId && conv.sellerId !== userId) {
-      throw new ForbiddenException(
-        "You are not a participant of this conversation",
-      );
-    }
+    this.authorization.assertResource(
+      context,
+      action,
+      "Conversation",
+      toConversationProjection({
+        id: conv.id,
+        buyerId: conv.buyerId,
+        sellerId: conv.sellerId,
+        postId: conv.postId,
+      }) as unknown as Record<string, unknown>,
+    );
     return conv;
   }
 
-  async isParticipant(
-    conversationId: string,
-    userId: string,
-  ): Promise<boolean> {
-    const conv = await this.conversationsRepository.findOne({
-      select: ["id", "buyerId", "sellerId"],
-      where: { id: conversationId },
-    });
-    if (!conv) return false;
-    return conv.buyerId === userId || conv.sellerId === userId;
-  }
-
-  /** Tăng version bigint-string; watermark/version không bao giờ giảm. */
   static nextVersion(current: string): string {
     return (BigInt(current) + 1n).toString();
   }
 
-  /**
-   * Tăng state_version sau khi đã giữ row lock. Trả version mới (string).
-   * Caller đã bump version cùng UPDATE metadata thì dùng đúng version đó,
-   * không gọi thêm lần hai (spec §6.2).
-   */
   async bumpStateVersion(
     manager: EntityManager,
     conversationId: string,
@@ -116,7 +110,7 @@ export class ConversationsService {
   /**
    * READ COMMITTED: SELECT → INSERT ... ON CONFLICT DO NOTHING (id uuidv7
    * rõ ràng vì raw insert không chạy @BeforeInsert) → SELECT row thắng race.
-   * Trả row chưa khóa; caller tiếp tục lockForParticipant rồi mới dùng
+   * Trả row chưa khóa; caller tiếp tục lockForAction rồi mới dùng
    * counters/metadata (spec §5.2).
    */
   async findOrCreateConversation(
@@ -151,9 +145,11 @@ export class ConversationsService {
 
   async createConversation(
     dto: CreateConversationDto,
-    buyerId: string,
+    context: AuthenticatedContext,
   ): Promise<ConversationSnapshotDto> {
+    const buyerId = context.principal.id;
     const { postId } = dto;
+    this.authorization.assertRoute(context, "create", "Conversation");
     const created = await this.dataSource.transaction(async (manager) => {
       // Serialize việc kiểm tra với post status update: giữ FOR SHARE
       // trên row post cho nhánh mở mới (spec §5.2). Bỏ qua post đã soft-delete.
@@ -162,7 +158,7 @@ export class ConversationsService {
         seller_id: string;
         status: PostStatus;
       }> = await manager.query(
-        `SELECT id, seller_id, status FROM posts
+        `SELECT id, seller_id, status, deleted_at FROM posts
           WHERE id = $1 AND deleted_at IS NULL FOR SHARE`,
         [postId],
       );
@@ -175,12 +171,19 @@ export class ConversationsService {
           "You cannot start a conversation about your own post",
         );
       }
-      return this.findOrCreateConversation(
+      this.authorization.assertCreate(context, "Conversation", {
+        buyerId,
+        sellerId: post.seller_id,
+        postId,
+      });
+      const conv = await this.findOrCreateConversation(
         postId,
         buyerId,
         post.seller_id,
         manager,
       );
+      await this.lockForAction(manager, conv.id, context, "read");
+      return conv;
     });
     const snapshot = await this.buildSnapshot(created.id, buyerId);
     if (!snapshot) throw new NotFoundException("Conversation not found");
@@ -189,7 +192,9 @@ export class ConversationsService {
 
   // ── Snapshots (list/detail/event dùng chung) ───────────────────────────────
 
-  async findAll(userId: string, query: PaginationDto) {
+  async findAll(context: AuthenticatedContext, query: PaginationDto) {
+    const userId = context.principal.id;
+    this.authorization.assertRoute(context, "read", "Conversation");
     const { page, limit } = query;
     const result = await this.dataSource.transaction(
       "REPEATABLE READ",
@@ -197,7 +202,7 @@ export class ConversationsService {
         const [convs, total] = await manager
           .getRepository(ConversationEntity)
           .createQueryBuilder("conv")
-          .where("conv.buyerId = :userId OR conv.sellerId = :userId", {
+          .where("(conv.buyerId = :userId OR conv.sellerId = :userId)", {
             userId,
           })
           .orderBy("conv.lastMessageAt", "DESC", "NULLS LAST")
@@ -218,9 +223,10 @@ export class ConversationsService {
 
   async findOne(
     conversationId: string,
-    userId: string,
+    context: AuthenticatedContext,
   ): Promise<ConversationSnapshotDto> {
-    await this.assertParticipant(conversationId, userId);
+    await this.getForAction(conversationId, context, "read");
+    const userId = context.principal.id;
     const snapshot = await this.dataSource.transaction(
       "REPEATABLE READ",
       async (manager) => {
@@ -357,8 +363,10 @@ export class ConversationsService {
   // ── Counts ─────────────────────────────────────────────────────────────────
 
   async getUnreadCount(
-    userId: string,
+    context: AuthenticatedContext,
   ): Promise<{ total: number; conversations: number }> {
+    this.authorization.assertRoute(context, "readMessages", "Conversation");
+    const userId = context.principal.id;
     const rows = (await this.conversationsRepository.query(
       `SELECT COUNT(*)::int AS total,
               COUNT(DISTINCT m.conversation_id)::int AS conversations

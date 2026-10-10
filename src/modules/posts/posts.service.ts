@@ -1,11 +1,10 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Brackets, Repository } from "typeorm";
+import { Brackets, DataSource, EntityManager, Repository } from "typeorm";
 
 import { createPaginationMeta } from "../../common/utils/pagination.util";
 import { CategoryEntity } from "../categories/category.entity";
@@ -14,6 +13,12 @@ import { FindPostsDto } from "./dto/find-posts.dto";
 import { SearchPostsDto } from "./dto/search-posts.dto";
 import { UpdatePostDto } from "./dto/update-post.dto";
 import { PostEntity, PostStatus } from "./post.entity";
+import { AuthorizationService } from "../authorization/authorization.service";
+import type {
+  AuthenticatedContext,
+  AuthorizationContext,
+} from "../authorization/authorization.types";
+import { toPostProjection } from "../authorization/subject-projections";
 
 @Injectable()
 export class PostsService {
@@ -22,22 +27,43 @@ export class PostsService {
     private readonly postsRepository: Repository<PostEntity>,
     @InjectRepository(CategoryEntity)
     private readonly categoriesRepository: Repository<CategoryEntity>,
+    private readonly authorization: AuthorizationService,
+    private readonly dataSource: DataSource,
   ) {}
 
-  // Tạo bài viết mới
-  async create(dto: CreatePostDto, sellerId: string) {
+  async create(dto: CreatePostDto, context: AuthenticatedContext) {
+    this.authorization.assertCreate(context, "Post", {
+      sellerId: context.principal.id,
+    });
+    const input = this.authorization.effectivePatch({ ...dto });
+    const fields = new Set([
+      "categoryId",
+      "title",
+      "description",
+      "price",
+      "condition",
+      "location",
+    ]);
+    if (Object.keys(input).some((field) => !fields.has(field))) {
+      throw new BadRequestException("Unknown post field");
+    }
     await this.ensureCategoryExists(dto.categoryId);
 
     const post = this.postsRepository.create({
-      ...dto,
-      sellerId,
+      categoryId: dto.categoryId,
+      title: dto.title,
+      description: dto.description,
+      price: dto.price,
+      condition: dto.condition,
+      location: dto.location,
+      sellerId: context.principal.id,
     });
 
     return this.postsRepository.save(post);
   }
 
-  // Lấy danh sách bài viết đang hoạt động
-  async findAll(query: FindPostsDto) {
+  async findAll(query: FindPostsDto, context: AuthorizationContext) {
+    this.authorization.assertRoute(context, "read", "Post");
     const { page, limit, categoryId } = query;
 
     const [items, total] = await this.postsRepository.findAndCount({
@@ -73,12 +99,12 @@ export class PostsService {
     };
   }
 
-  // Lấy chi tiết bài viết public
-  async findMyPosts(sellerId: string, query: FindPostsDto) {
+  async findMyPosts(context: AuthenticatedContext, query: FindPostsDto) {
+    this.authorization.assertRoute(context, "read", "Post");
     const { page, limit, categoryId } = query;
     const [items, total] = await this.postsRepository.findAndCount({
       where: {
-        sellerId,
+        sellerId: context.principal.id,
         ...(categoryId ? { categoryId } : {}),
       },
       relations: {
@@ -103,7 +129,8 @@ export class PostsService {
     };
   }
 
-  async search(query: SearchPostsDto) {
+  async search(query: SearchPostsDto, context: AuthorizationContext) {
+    this.authorization.assertRoute(context, "read", "Post");
     const { q, categoryId, minPrice, maxPrice, lat, lng, radius, page, limit } =
       query;
 
@@ -113,7 +140,7 @@ export class PostsService {
       minPrice > maxPrice
     ) {
       throw new BadRequestException(
-        'minPrice must be less than or equal to maxPrice',
+        "minPrice must be less than or equal to maxPrice",
       );
     }
 
@@ -121,18 +148,18 @@ export class PostsService {
       lat !== undefined && lng !== undefined && radius !== undefined;
 
     const queryBuilder = this.postsRepository
-      .createQueryBuilder('post')
-      .leftJoin('post.seller', 'seller')
-      .addSelect(['seller.id', 'seller.fullName', 'seller.avatarUrl'])
-      .where('post.status = :status', { status: PostStatus.ACTIVE })
-      .andWhere('post.deleted_at IS NULL');
+      .createQueryBuilder("post")
+      .leftJoin("post.seller", "seller")
+      .addSelect(["seller.id", "seller.fullName", "seller.avatarUrl"])
+      .where("post.status = :status", { status: PostStatus.ACTIVE })
+      .andWhere("post.deleted_at IS NULL");
 
     if (q) {
       queryBuilder.andWhere(
         new Brackets((builder) => {
           builder
-            .where('post.title ILIKE :keyword', { keyword: `%${q}%` })
-            .orWhere('post.description ILIKE :keyword', {
+            .where("post.title ILIKE :keyword", { keyword: `%${q}%` })
+            .orWhere("post.description ILIKE :keyword", {
               keyword: `%${q}%`,
             });
         }),
@@ -140,24 +167,24 @@ export class PostsService {
     }
 
     if (categoryId) {
-      queryBuilder.andWhere('post.category_id = :categoryId', { categoryId });
+      queryBuilder.andWhere("post.category_id = :categoryId", { categoryId });
     }
 
     if (minPrice !== undefined) {
-      queryBuilder.andWhere('post.price >= :minPrice', { minPrice });
+      queryBuilder.andWhere("post.price >= :minPrice", { minPrice });
     }
 
     if (maxPrice !== undefined) {
-      queryBuilder.andWhere('post.price <= :maxPrice', { maxPrice });
+      queryBuilder.andWhere("post.price <= :maxPrice", { maxPrice });
     }
 
     if (hasLocationFilter) {
       const searchPoint =
-        'ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography';
+        "ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography";
 
       queryBuilder
-        .addSelect(`ST_Distance(post.location, ${searchPoint})`, 'distance')
-        .andWhere('post.location IS NOT NULL')
+        .addSelect(`ST_Distance(post.location, ${searchPoint})`, "distance")
+        .andWhere("post.location IS NOT NULL")
         .andWhere(`ST_DWithin(post.location, ${searchPoint}, :radius)`, {
           lat,
           lng,
@@ -167,7 +194,7 @@ export class PostsService {
 
     const total = await queryBuilder.clone().getCount();
     const { entities, raw } = await queryBuilder
-      .orderBy('post.createdAt', 'DESC')
+      .orderBy("post.createdAt", "DESC")
       .skip((page - 1) * limit)
       .take(limit)
       .getRawAndEntities();
@@ -188,7 +215,7 @@ export class PostsService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, context: AuthorizationContext) {
     const post = await this.postsRepository.findOne({
       where: {
         id,
@@ -211,8 +238,21 @@ export class PostsService {
       },
     });
 
-    if (!post) {
+    if (!post || post.deletedAt) {
       throw new NotFoundException("Post not found");
+    }
+    {
+      this.authorization.assertResource(
+        context,
+        "read",
+        "Post",
+        toPostProjection({
+          id: post.id,
+          sellerId: post.sellerId,
+          status: post.status,
+          deletedAt: post.deletedAt,
+        }) as unknown as Record<string, unknown>,
+      );
     }
 
     return post;
@@ -230,75 +270,190 @@ export class PostsService {
     return post;
   }
 
-  // Cập nhật bài viết
-  async update(id: string, dto: UpdatePostDto, requesterId: string) {
-    const post = await this.getOwnedPost(id, requesterId);
-
-    if (post.status === PostStatus.HIDDEN) {
-      throw new BadRequestException("Hidden posts cannot be updated");
-    }
-
-    if (dto.categoryId !== undefined) {
-      await this.ensureCategoryExists(dto.categoryId);
-    }
-
-    Object.assign(post, dto);
-
-    return this.postsRepository.save(post);
+  async update(id: string, dto: UpdatePostDto, context: AuthenticatedContext) {
+    return this.dataSource.transaction(async (manager) => {
+      const post = await manager
+        .getRepository(PostEntity)
+        .createQueryBuilder("post")
+        .setLock("pessimistic_write")
+        .where("post.id = :id", { id })
+        .getOne();
+      if (!post) throw new NotFoundException("Post not found");
+      const projection = toPostProjection({
+        id: post.id,
+        sellerId: post.sellerId,
+        status: post.status,
+        deletedAt: post.deletedAt,
+      }) as unknown as Record<string, unknown>;
+      const patch: Record<string, unknown> = { ...dto };
+      this.authorization.assertUpdateFields(
+        context,
+        "update",
+        "Post",
+        projection,
+        patch,
+      );
+      if (post.status === PostStatus.HIDDEN) {
+        throw new BadRequestException("Hidden posts cannot be updated");
+      }
+      if (dto.categoryId !== undefined) {
+        await this.ensureCategoryExists(dto.categoryId, manager);
+      }
+      const effective = this.authorization.effectivePatch(patch);
+      Object.assign(post, effective);
+      return manager.getRepository(PostEntity).save(post);
+    });
   }
 
-  // Đánh dấu đã bán
-  async markAsSold(id: string, requesterId: string) {
-    const post = await this.getOwnedPost(id, requesterId);
-
-    if (post.status === PostStatus.HIDDEN) {
-      throw new BadRequestException("Hidden posts cannot be marked as sold");
-    }
-
-    post.status = PostStatus.SOLD;
-
-    return this.postsRepository.save(post);
+  async markAsSold(id: string, context: AuthenticatedContext) {
+    return this.dataSource.transaction(async (manager) => {
+      const post = await manager
+        .getRepository(PostEntity)
+        .createQueryBuilder("post")
+        .setLock("pessimistic_write")
+        .where("post.id = :id", { id })
+        .getOne();
+      if (!post) throw new NotFoundException("Post not found");
+      this.authorization.assertResource(
+        context,
+        "markSold",
+        "Post",
+        toPostProjection({
+          id: post.id,
+          sellerId: post.sellerId,
+          status: post.status,
+          deletedAt: post.deletedAt,
+        }) as unknown as Record<string, unknown>,
+      );
+      if (post.status === PostStatus.HIDDEN) {
+        throw new BadRequestException("Hidden posts cannot be marked as sold");
+      }
+      post.status = PostStatus.SOLD;
+      return manager.getRepository(PostEntity).save(post);
+    });
   }
 
-  // Xóa mềm bài viết
-  async remove(id: string, requesterId: string) {
-    await this.getOwnedPost(id, requesterId);
-
-    await this.postsRepository.softDelete(id);
+  async remove(id: string, context: AuthenticatedContext) {
+    return this.dataSource.transaction(async (manager) => {
+      const post = await manager
+        .getRepository(PostEntity)
+        .createQueryBuilder("post")
+        .setLock("pessimistic_write")
+        .where("post.id = :id", { id })
+        .getOne();
+      if (!post) throw new NotFoundException("Post not found");
+      this.authorization.assertResource(
+        context,
+        "delete",
+        "Post",
+        toPostProjection({
+          id: post.id,
+          sellerId: post.sellerId,
+          status: post.status,
+          deletedAt: post.deletedAt,
+        }) as unknown as Record<string, unknown>,
+      );
+      await manager.softDelete(PostEntity, id);
+    });
   }
 
-  async restore(id: string, requesterId: string) {
-    const post = await this.getOwnedPost(id, requesterId, true);
-
-    if (!post.deletedAt) {
-      return post;
-    }
-
-    await this.postsRepository.restore(id);
-    return this.postsRepository.findOneByOrFail({ id });
+  async restore(id: string, context: AuthenticatedContext) {
+    return this.dataSource.transaction(async (manager) => {
+      const repo = manager.getRepository(PostEntity);
+      const post = await repo
+        .createQueryBuilder("post")
+        .withDeleted()
+        .setLock("pessimistic_write")
+        .where("post.id = :id", { id })
+        .getOne();
+      if (!post) throw new NotFoundException("Post not found");
+      this.authorization.assertResource(
+        context,
+        "restore",
+        "Post",
+        toPostProjection({
+          id: post.id,
+          sellerId: post.sellerId,
+          status: post.status,
+          deletedAt: post.deletedAt,
+        }) as unknown as Record<string, unknown>,
+      );
+      if (!post.deletedAt) {
+        return post;
+      }
+      await repo.restore(id);
+      return repo.findOneByOrFail({ id });
+    });
   }
 
-  // Kiểm tra quyền sở hữu bài viết
-  // Dùng chung cho các module thao tác trên bài đăng, ví dụ PostImagesModule.
-  async getOwnedPost(id: string, requesterId: string, withDeleted = false) {
+  async getOwnedPost(
+    id: string,
+    context: AuthenticatedContext,
+    withDeleted = false,
+  ) {
     const post = await this.postsRepository.findOne({
       where: { id },
       withDeleted,
     });
 
-    if (!post) {
+    if (!post || (!withDeleted && post.deletedAt)) {
       throw new NotFoundException("Post not found");
     }
-
-    if (post.sellerId !== requesterId) {
-      throw new ForbiddenException("You do not own this post");
-    }
-
+    this.authorization.assertResource(
+      context,
+      "read",
+      "Post",
+      toPostProjection({
+        id: post.id,
+        sellerId: post.sellerId,
+        status: post.status,
+        deletedAt: post.deletedAt,
+      }) as unknown as Record<string, unknown>,
+    );
     return post;
   }
 
-  private async ensureCategoryExists(categoryId: string) {
-    const category = await this.categoriesRepository.findOneBy({
+  async getPostForAction(
+    id: string,
+    context: AuthenticatedContext,
+    action: "update" | "markSold" | "delete" | "restore" | "manageImages",
+    withDeleted = false,
+    manager?: EntityManager,
+  ) {
+    const repo = manager
+      ? manager.getRepository(PostEntity)
+      : this.postsRepository;
+    const query = repo
+      .createQueryBuilder("post")
+      .where("post.id = :id", { id });
+    if (withDeleted) query.withDeleted();
+    if (manager) query.setLock("pessimistic_write");
+    const post = await query.getOne();
+    if (!post || (!withDeleted && post.deletedAt)) {
+      throw new NotFoundException("Post not found");
+    }
+    this.authorization.assertResource(
+      context,
+      action,
+      "Post",
+      toPostProjection({
+        id: post.id,
+        sellerId: post.sellerId,
+        status: post.status,
+        deletedAt: post.deletedAt,
+      }) as unknown as Record<string, unknown>,
+    );
+    return post;
+  }
+
+  private async ensureCategoryExists(
+    categoryId: string,
+    manager?: EntityManager,
+  ) {
+    const repo = manager
+      ? manager.getRepository(CategoryEntity)
+      : this.categoriesRepository;
+    const category = await repo.findOneBy({
       id: categoryId,
     });
 

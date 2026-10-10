@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 import { TypeOrmModule, TypeOrmModuleOptions } from "@nestjs/typeorm";
 import { FavoritesModule } from "./modules/favorites/favorites.module";
@@ -17,6 +18,12 @@ import { StorageModule } from "./modules/storage/storage.module";
 import { RealtimeModule } from "./modules/realtime/realtime.module";
 import { databaseOptions } from "./config/database.config";
 import { ReviewsModule } from "./modules/reviews/reviews.module";
+import { AuthorizationModule } from "./modules/authorization/authorization.module";
+import { AuthPrincipalModule } from "./common/auth-principal/auth-principal.module";
+import { SessionRegistryModule } from "./common/session-registry/session-registry.module";
+import { AccountLifecycleModule } from "./common/account-lifecycle/account-lifecycle.module";
+import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
+import { PoliciesGuard } from "./modules/authorization/guards/policies.guard";
 
 @Module({
   imports: [
@@ -69,8 +76,16 @@ import { ReviewsModule } from "./modules/reviews/reviews.module";
     StorageModule,
     RealtimeModule,
     ReviewsModule,
+    AuthorizationModule,
+    AuthPrincipalModule,
+    SessionRegistryModule,
+    AccountLifecycleModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: PoliciesGuard },
+  ],
 })
 export class AppModule {}

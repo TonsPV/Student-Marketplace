@@ -10,7 +10,6 @@ import { DocumentBuilder, SwaggerModule } from "@nestjs/swagger";
 import { helmetConfig } from "./config/helmet.config";
 import helmet from "helmet";
 import { TransformInterceptor } from "./common/interceptors/transform.interceptor";
-import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import cookieParser from "cookie-parser";
 import { SocketIoAdapter } from "./common/adapters/socket-io.adapter";
 
@@ -32,8 +31,8 @@ export function configureApplication(app: INestApplication): void {
     allowedHeaders: ["Content-Type", "Authorization"],
   });
 
-  // Enable global guard for JWT authentication
-  app.useGlobalGuards(new JwtAuthGuard(reflector));
+  // JWT + Policies guards are registered via APP_GUARD in AppModule so that
+  // authentication always runs before authorization with proper DI order.
 
   app.useGlobalPipes(
     new ValidationPipe({

@@ -13,6 +13,8 @@ import { GoogleStrategy } from "./strategies/google.strategy";
 import googleOauthConfig from "../../config/google-oauth.config";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { UserEntity } from "../user/user.entity";
+import { AuthPrincipalModule } from "../../common/auth-principal/auth-principal.module";
+import { AuthorizationModule } from "../authorization/authorization.module";
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { UserEntity } from "../user/user.entity";
     TypeOrmModule.forFeature([UserEntity]),
     PassportModule,
     ConfigModule.forFeature(googleOauthConfig),
+    AuthPrincipalModule,
+    AuthorizationModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
