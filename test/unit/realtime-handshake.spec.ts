@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { EventEmitter } from "events";
-import type { JwtService } from "@nestjs/jwt";
+import type { SocketTicketService } from "../../src/modules/realtime/socket-ticket.service";
 import type { Namespace, Socket } from "socket.io";
 import { RealtimeGateway } from "../../src/modules/realtime/realtime.gateway";
 import type { RealtimeService } from "../../src/modules/realtime/realtime.service";
@@ -38,7 +38,7 @@ describe("handshake settlement and cleanup", () => {
       join: jest.fn().mockResolvedValue(undefined),
     } as unknown as Socket;
     const jwt = {
-      verifyAsync: jest
+      verify: jest
         .fn()
         .mockResolvedValue({ id: ID, exp: Date.now() / 1000 + 60 }),
     };
@@ -52,7 +52,7 @@ describe("handshake settlement and cleanup", () => {
       markOffline: jest.fn(),
     };
     const gateway = new RealtimeGateway(
-      jwt as unknown as JwtService,
+      jwt as unknown as SocketTicketService,
       realtime as unknown as RealtimeService,
       resolver,
       registry,
@@ -110,7 +110,7 @@ describe("handshake settlement and cleanup", () => {
   it("JWT failure does not register pending state or query DB", async () => {
     const resolve = jest.fn().mockResolvedValue(principal),
       h = harness(resolve);
-    h.jwt.verifyAsync.mockRejectedValue(Error("bad JWT"));
+    h.jwt.verify.mockRejectedValue(Error("bad JWT"));
     await h.middleware(h.socket, h.next);
     expect(h.next.mock.calls[0][0].message).toBe("UNAUTHORIZED");
     expect(resolve).not.toHaveBeenCalled();

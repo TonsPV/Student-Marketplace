@@ -4,6 +4,15 @@ HTTP base: `/api/v1`. REST responses wrap the payload in `data`.
 Use an access JWT in `Authorization: Bearer ...`. Socket.IO namespace: `/ws`,
 handshake `auth: { token: accessJwt }`.
 
+The Next.js frontend also supports `POST /realtime/socket-ticket`, authenticated
+with the normal REST access JWT. Response: `{ ticket, expiresAt, sessionExpiresAt }`.
+The browser receives only this socket ticket; access/refresh JWTs remain in its
+BFF's HttpOnly cookies. Tickets use a domain-separated signing key and audience,
+cannot authenticate REST or mint tickets, and allow new handshakes for at most
+60 seconds. Established sockets use the original access session expiry, not the
+short handshake expiry. Account lookup/session invalidation still applies. The
+existing access-JWT handshake remains compatible.
+
 ## Send, upload and retry
 
 1. Generate one `clientId` for each intended message (e.g. `crypto.randomUUID()`).

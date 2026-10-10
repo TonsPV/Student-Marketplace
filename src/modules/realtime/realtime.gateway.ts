@@ -1,5 +1,4 @@
 import { Logger, UnauthorizedException } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -16,6 +15,7 @@ import { SessionRegistryService } from "../../common/session-registry/session-re
 import type { AuthenticatedPrincipal } from "../authorization/authorization.types";
 import { userRoom } from "./realtime.events";
 import { RealtimeService } from "./realtime.service";
+import { SocketTicketService } from "./socket-ticket.service";
 
 export type AuthSocket = Socket & {
   data: { user?: AuthenticatedPrincipal; presenceRegistered?: boolean };
@@ -27,7 +27,7 @@ export class RealtimeGateway
   @WebSocketServer() server!: Namespace;
   private readonly logger = new Logger(RealtimeGateway.name);
   constructor(
-    private readonly jwt: JwtService,
+    private readonly tickets: SocketTicketService,
     private readonly realtime: RealtimeService,
     private readonly principals: AuthPrincipalService,
     private readonly sessions: SessionRegistryService,
@@ -52,7 +52,7 @@ export class RealtimeGateway
           socket.handshake.auth?.token ??
           socket.handshake.headers.authorization?.replace(/^Bearer\s+/i, "");
         if (typeof raw !== "string" || !raw) throw new UnauthorizedException();
-        claims = await this.jwt.verifyAsync<VerifiedClaims>(raw);
+        claims = await this.tickets.verify(raw);
         const { id, expiresAtMs } =
           this.principals.validateVerifiedClaims(claims);
         if (settled || socket.conn.readyState !== "open")
