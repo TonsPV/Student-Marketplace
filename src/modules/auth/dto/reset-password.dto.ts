@@ -1,48 +1,68 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty } from "@nestjs/swagger";
+import { Transform } from "class-transformer";
 import {
   IsEmail,
   IsNotEmpty,
-  IsNumberString,
+  IsString,
+  Matches,
   MaxLength,
   MinLength,
-} from 'class-validator';
+  registerDecorator,
+  ValidationOptions,
+} from "class-validator";
+
+export function MaxUtf8Bytes(
+  max: number,
+  options?: ValidationOptions,
+): PropertyDecorator {
+  return (object, propertyName) =>
+    registerDecorator({
+      name: "maxUtf8Bytes",
+      target: object.constructor,
+      propertyName: String(propertyName),
+      constraints: [max],
+      options,
+      validator: {
+        validate: (value: unknown) =>
+          typeof value === "string" && Buffer.byteLength(value, "utf8") <= max,
+        defaultMessage: () => `Password cannot exceed ${max} UTF-8 bytes`,
+      },
+    });
+}
 
 export class SendResetPasswordDto {
-  @ApiProperty()
-  @IsEmail({}, { message: 'Email is invalid' })
-  @IsNotEmpty({ message: 'Email is required' })
+  @ApiProperty({ example: "student@example.com" })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim() : value,
+  )
+  @IsString()
+  @IsEmail()
+  @MaxLength(254)
   email!: string;
 }
 
-export class VerifyOtpDto {
-  @ApiProperty()
-  @IsEmail({}, { message: 'Email is invalid' })
-  @IsNotEmpty({ message: 'Email is required' })
-  email!: string;
-
-  @ApiProperty()
-  @MinLength(6, { message: 'OTP must be at least 6 characters long' })
-  @MaxLength(6, { message: 'OTP cannot exceed 6 characters' })
-  @IsNotEmpty({ message: 'OTP is required' })
-  @IsNumberString()
+export class VerifyOtpDto extends SendResetPasswordDto {
+  @ApiProperty({ example: "012345", description: "Exactly six ASCII digits" })
+  @IsString()
+  @Matches(/^[0-9]{6}$/, { message: "OTP must contain exactly six digits" })
   otp!: string;
 }
 
 export class ResetPasswordDto {
-  @ApiProperty()
-  @IsEmail({}, { message: 'Email is invalid' })
-  @IsNotEmpty({ message: 'Email is required' })
-  email!: string;
+  @ApiProperty({ description: "One-use token returned by verify-reset-otp" })
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{43}$/)
+  resetToken!: string;
 
-  @ApiProperty()
-  @MinLength(6, { message: 'OTP must be at least 6 characters long' })
-  @MaxLength(6, { message: 'OTP cannot exceed 6 characters' })
-  @IsNotEmpty({ message: 'OTP is required' })
-  @IsNumberString()
-  otp!: string;
-
-  @ApiProperty()
-  @IsNotEmpty({ message: 'New password is required' })
-  @MinLength(8, { message: 'New password must be at least 8 characters long' })
+  @ApiProperty({ minLength: 8, description: "Maximum 72 UTF-8 bytes" })
+  @IsString()
+  @MinLength(8)
+  @MaxUtf8Bytes(72)
   newPassword!: string;
+
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  @MaxUtf8Bytes(72)
+  confirmPassword!: string;
 }
