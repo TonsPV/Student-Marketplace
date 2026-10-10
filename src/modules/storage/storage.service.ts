@@ -23,6 +23,8 @@ import {
   CONTENT_TYPE_TO_EXTENSION,
   MESSAGE_IMAGE_CONTENT_TYPES,
   MESSAGE_IMAGE_KEY_REGEX,
+  POST_IMAGE_KEY_REGEX,
+  SUPPORTED_UPLOAD_PURPOSES,
   MessageImageContentType,
 } from "./storage.constants";
 
@@ -101,6 +103,34 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     return null;
   }
 
+  static isPostImageKeyOwnedBy(key: unknown, userId: string): boolean {
+    return (
+      typeof key === "string" &&
+      POST_IMAGE_KEY_REGEX.test(key) &&
+      key.split("/")[1] === userId.toLowerCase()
+    );
+  }
+
+  async verifyPostImage(key: string, userId: string): Promise<void> {
+    if (!StorageService.isPostImageKeyOwnedBy(key, userId)) {
+      throw new BadRequestException("Invalid post image key or owner");
+    }
+    const head = await this.headObject(key);
+    if (!head) throw new BadRequestException("Image has not been uploaded");
+    const extension = key.split(".").pop();
+    const expectedType = Object.entries(CONTENT_TYPE_TO_EXTENSION).find(
+      ([, ext]) => ext === extension,
+    )?.[0];
+    if (
+      head.contentType !== expectedType ||
+      !Number.isSafeInteger(head.contentLength) ||
+      head.contentLength < 1 ||
+      head.contentLength > this.upload.maxFileSizeBytes
+    ) {
+      throw new BadRequestException("Invalid uploaded image type or size");
+    }
+  }
+
   // ── Presign PUT (FE upload trực tiếp) ─────────────────────────────────────
 
   async presignPut(
@@ -114,10 +144,8 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
       ownerId: userId,
       purpose,
     });
-    if (purpose !== "message") {
-      throw new BadRequestException(
-        "Unsupported upload purpose (phase 1 supports only 'message')",
-      );
+    if (!(SUPPORTED_UPLOAD_PURPOSES as readonly string[]).includes(purpose)) {
+      throw new BadRequestException("Unsupported upload purpose");
     }
     const ext = StorageService.extensionForContentType(contentType);
     if (!ext) {
@@ -132,7 +160,8 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const key = `messages/${userId}/${uuidv7()}.${ext}`;
+    const prefix = purpose === "post" ? "posts" : "messages";
+    const key = `${prefix}/${userId.toLowerCase()}/${uuidv7()}.${ext}`;
     const command = new PutObjectCommand({
       Bucket: this.r2.bucketName,
       Key: key,

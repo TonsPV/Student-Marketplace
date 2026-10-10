@@ -28,5 +28,9 @@ export const CONTENT_TYPE_TO_EXTENSION: Record<
 export const MESSAGE_IMAGE_KEY_REGEX =
   /^messages\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$/;
 
-export const SUPPORTED_UPLOAD_PURPOSES = ["message"] as const;
+/** Public post images remain in the private bucket; readers receive signed GET URLs. */
+export const POST_IMAGE_KEY_REGEX =
+  /^posts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$/;
+
+export const SUPPORTED_UPLOAD_PURPOSES = ["message", "post"] as const;
 export type UploadPurpose = (typeof SUPPORTED_UPLOAD_PURPOSES)[number];
