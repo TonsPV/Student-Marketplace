@@ -5,6 +5,8 @@ import { RealtimeGateway } from "./realtime.gateway";
 import { RealtimeService } from "./realtime.service";
 import { AuthPrincipalModule } from "../../common/auth-principal/auth-principal.module";
 import { SessionRegistryModule } from "../../common/session-registry/session-registry.module";
+import { SocketTicketService } from "./socket-ticket.service";
+import { SocketTicketController } from "./socket-ticket.controller";
 
 @Global()
 @Module({
@@ -18,7 +20,8 @@ import { SessionRegistryModule } from "../../common/session-registry/session-reg
       }),
     }),
   ],
-  providers: [RealtimeGateway, RealtimeService],
+  controllers: [SocketTicketController],
+  providers: [RealtimeGateway, RealtimeService, SocketTicketService],
   exports: [RealtimeService],
 })
 export class RealtimeModule {}

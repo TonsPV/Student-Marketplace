@@ -15,12 +15,20 @@ import { TypeOrmModule } from "@nestjs/typeorm";
 import { UserEntity } from "../user/user.entity";
 import { AuthPrincipalModule } from "../../common/auth-principal/auth-principal.module";
 import { AuthorizationModule } from "../authorization/authorization.module";
+import { MailModule } from "../mailer/mail.module";
+import { ThrottlerModule } from "@nestjs/throttler";
+import { PasswordResetChallengeEntity } from "./password-reset-challenge.entity";
+import { PasswordResetService } from "./services/password-reset.service";
+import { PasswordResetController } from "./password-reset.controller";
+import { PasswordResetScheduler } from "./password-reset.scheduler";
 
 @Module({
   imports: [
     RefreshTokenModule,
     UserModule,
-    TypeOrmModule.forFeature([UserEntity]),
+    TypeOrmModule.forFeature([UserEntity, PasswordResetChallengeEntity]),
+    MailModule,
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 10 }]),
     PassportModule,
     ConfigModule.forFeature(googleOauthConfig),
     AuthPrincipalModule,
@@ -38,7 +46,14 @@ import { AuthorizationModule } from "../authorization/authorization.module";
       inject: [ConfigService],
     }),
   ],
-  controllers: [AuthController],
-  providers: [AuthService, PasswordService, JwtStrategy, GoogleStrategy],
+  controllers: [AuthController, PasswordResetController],
+  providers: [
+    AuthService,
+    PasswordService,
+    JwtStrategy,
+    GoogleStrategy,
+    PasswordResetService,
+    PasswordResetScheduler,
+  ],
 })
 export class AuthModule {}

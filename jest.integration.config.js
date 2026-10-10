@@ -13,4 +13,8 @@ module.exports = {
     "^src/(.*)$": "<rootDir>/src/$1",
   },
   clearMocks: true,
+  transform: {
+    "^.+\\.[tj]s$": ["ts-jest", { tsconfig: { allowJs: true } }],
+  },
+  transformIgnorePatterns: ["node_modules/(?!@nestjs/jwt/)"],
 };

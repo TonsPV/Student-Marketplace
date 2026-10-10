@@ -15,6 +15,7 @@ import { RefreshTokenEntity } from "../../src/modules/refresh-token/refresh-toke
 import { ReportEntity } from "../../src/modules/reports/report.entity";
 import { FavoriteEntity } from "../../src/modules/favorites/favorite.entity";
 import { ReviewEntity } from "../../src/modules/reviews/review.entity";
+import { PasswordResetChallengeEntity } from "../../src/modules/auth/password-reset-challenge.entity";
 
 const ownedSchemas = new Set<string>();
 export function testDatabaseEnv(): Record<string, string | undefined> {
@@ -33,6 +34,14 @@ export function testDatabaseEnv(): Record<string, string | undefined> {
   }
   env.POSTGRES_SYNCHRONIZE = "false";
   env.NODE_ENV = "test";
+  // Existing AppModule E2E suites need config but must never send real email.
+  env.EMAIL_HOST = "127.0.0.1";
+  env.EMAIL_PORT = "587";
+  env.EMAIL_SECURE = "false";
+  env.EMAIL_USER = "test@example.com";
+  env.EMAIL_PASSWORD = "test-only-password";
+  env.MAIL_FROM = "Student Marketplace <test@example.com>";
+  env.PASSWORD_RESET_SECRET = "password-reset-test-secret-not-for-production";
   return env;
 }
 
@@ -43,6 +52,7 @@ export function createTestDataSource(): DataSource {
     ...databaseOptions({ ...testDatabaseEnv(), POSTGRES_SCHEMA: schema }),
     entities: [
       UserEntity,
+      PasswordResetChallengeEntity,
       CategoryEntity,
       PostEntity,
       PostImageEntity,
