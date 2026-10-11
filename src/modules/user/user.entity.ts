@@ -37,6 +37,14 @@ export class UserEntity extends BaseEntity {
   avatarUrl!: string | null;
 
   @Column({
+    name: "avatar_storage_key",
+    type: "varchar",
+    length: 256,
+    nullable: true,
+  })
+  avatarStorageKey!: string | null;
+
+  @Column({
     type: "geography",
     spatialFeatureType: "Point",
     srid: 4326,

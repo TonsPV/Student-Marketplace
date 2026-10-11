@@ -17,7 +17,7 @@ export class UploadsController {
   @CheckPolicies({ action: "create", subject: "Upload" })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
-    summary: "Request presigned PUT URL for a message or post image",
+    summary: "Request presigned PUT URL for a message, post or avatar image",
   })
   @ResponseMessage("Upload URL created successfully")
   presign(

@@ -55,7 +55,12 @@ export class FavoritesService {
       .createQueryBuilder("favorite")
       .innerJoinAndSelect("favorite.post", "post")
       .leftJoin("post.seller", "seller")
-      .addSelect(["seller.id", "seller.fullName", "seller.avatarUrl"])
+      .addSelect([
+        "seller.id",
+        "seller.fullName",
+        "seller.avatarUrl",
+        "seller.avatarStorageKey",
+      ])
       .leftJoin("post.category", "category")
       .addSelect(["category.id", "category.name"])
       .leftJoinAndSelect("post.images", "image")
@@ -71,12 +76,14 @@ export class FavoritesService {
       .getManyAndCount();
 
     return {
-      items: favorites.map((favorite) => ({
-        id: favorite.id,
-        postId: favorite.postId,
-        createdAt: favorite.createdAt,
-        post: favorite.post,
-      })),
+      items: await Promise.all(
+        favorites.map(async (favorite) => ({
+          id: favorite.id,
+          postId: favorite.postId,
+          createdAt: favorite.createdAt,
+          post: await this.postsService.withSellerAvatar(favorite.post),
+        })),
+      ),
       meta: createPaginationMeta(query, total),
     };
   }

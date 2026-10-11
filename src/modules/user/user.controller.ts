@@ -1,4 +1,5 @@
 import { Body, Controller, Delete, Get, Param, Patch } from "@nestjs/common";
+import { UpdateAvatarDto } from "./dto/update-avatar.dto";
 import { UserService } from "./user.service";
 import { ResponseMessage } from "../../common/decorators/customize.decorator";
 import { ApiBearerAuth, ApiBody } from "@nestjs/swagger";
@@ -48,6 +49,18 @@ export class UserController {
     @Body() dto: UpdateUserDto,
   ) {
     return this.userService.updateMyProfile(dto, ctx);
+  }
+
+  @Patch("/me/avatar")
+  @CheckPolicies({ action: "update", subject: "User" })
+  @ApiBearerAuth("access-token")
+  @ApiBody({ type: UpdateAvatarDto })
+  @ResponseMessage("Update avatar successfully!")
+  async updateAvatar(
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+    @Body() dto: UpdateAvatarDto,
+  ) {
+    return this.userService.updateAvatar(dto, ctx);
   }
 
   @Patch("/me/location")

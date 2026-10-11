@@ -18,6 +18,8 @@ import type {
   AuthenticatedContext,
   AuthorizationContext,
 } from "../authorization/authorization.types";
+import { StorageService } from "../storage/storage.service";
+import { resolveAvatar } from "../storage/avatar-response";
 import { toPostProjection } from "../authorization/subject-projections";
 
 @Injectable()
@@ -29,6 +31,7 @@ export class PostsService {
     private readonly categoriesRepository: Repository<CategoryEntity>,
     private readonly authorization: AuthorizationService,
     private readonly dataSource: DataSource,
+    private readonly storage: StorageService,
   ) {}
 
   async create(dto: CreatePostDto, context: AuthenticatedContext) {
@@ -82,6 +85,7 @@ export class PostsService {
           id: true,
           fullName: true,
           avatarUrl: true,
+          avatarStorageKey: true,
         },
         category: {
           id: true,
@@ -96,7 +100,9 @@ export class PostsService {
     });
 
     return {
-      items,
+      items: await Promise.all(
+        items.map((post) => this.withSellerAvatar(post)),
+      ),
       meta: createPaginationMeta(query, total),
     };
   }
@@ -152,7 +158,12 @@ export class PostsService {
     const queryBuilder = this.postsRepository
       .createQueryBuilder("post")
       .leftJoin("post.seller", "seller")
-      .addSelect(["seller.id", "seller.fullName", "seller.avatarUrl"])
+      .addSelect([
+        "seller.id",
+        "seller.fullName",
+        "seller.avatarUrl",
+        "seller.avatarStorageKey",
+      ])
       .where("post.status = :status", { status: PostStatus.ACTIVE })
       .andWhere("post.deleted_at IS NULL");
 
@@ -201,10 +212,12 @@ export class PostsService {
       .take(limit)
       .getRawAndEntities();
 
-    const items = entities.map((post, index) => ({
-      ...post,
-      distance: hasLocationFilter ? Number(raw[index].distance) : null,
-    }));
+    const items = await Promise.all(
+      entities.map(async (post, index) => ({
+        ...(await this.withSellerAvatar(post)),
+        distance: hasLocationFilter ? Number(raw[index].distance) : null,
+      })),
+    );
 
     return {
       items,
@@ -232,6 +245,7 @@ export class PostsService {
           id: true,
           fullName: true,
           avatarUrl: true,
+          avatarStorageKey: true,
         },
         category: {
           id: true,
@@ -257,7 +271,19 @@ export class PostsService {
       );
     }
 
-    return post;
+    return this.withSellerAvatar(post);
+  }
+
+  async withSellerAvatar(post: PostEntity) {
+    if (!post.seller) return post;
+    const { avatarStorageKey: _key, ...seller } = post.seller;
+    return {
+      ...post,
+      seller: {
+        ...seller,
+        ...(await resolveAvatar(this.storage, post.seller)),
+      },
+    };
   }
 
   async getActivePost(id: string) {

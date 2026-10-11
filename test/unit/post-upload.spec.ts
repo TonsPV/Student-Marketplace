@@ -39,7 +39,7 @@ describe("post upload keys, metadata and CASL", () => {
   afterEach(() => jest.restoreAllMocks());
 
   it("allows only own message and post uploads", () => {
-    for (const purpose of ["post", "message"]) {
+    for (const purpose of ["post", "message", "avatar"]) {
       expect(() =>
         authorization.assertCreate(context, "Upload", {
           ownerId: OWNER,
@@ -63,7 +63,7 @@ describe("post upload keys, metadata and CASL", () => {
     expect(() =>
       authorization.assertCreate(context, "Upload", {
         ownerId: OWNER,
-        purpose: "avatar",
+        purpose: "unsupported",
       }),
     ).toThrow();
   });

@@ -19,6 +19,7 @@ import {
 import { AuthorizationService } from "../authorization/authorization.service";
 import type { AuthenticatedContext } from "../authorization/authorization.types";
 import { toConversationProjection } from "../authorization/subject-projections";
+import { resolveAvatar } from "../storage/avatar-response";
 import { StorageService } from "../storage/storage.service";
 
 export type ConversationParticipantAction =
@@ -285,7 +286,12 @@ export class ConversationsService {
     const users = await manager.getRepository(UserEntity).find({
       where: { id: In(userIds) },
       withDeleted: true,
-      select: { id: true, fullName: true, avatarUrl: true },
+      select: {
+        id: true,
+        fullName: true,
+        avatarUrl: true,
+        avatarStorageKey: true,
+      },
     });
     const unreadRows = (await manager.query(
       `SELECT conversation_id, COUNT(*)::int AS cnt
@@ -310,6 +316,13 @@ export class ConversationsService {
 
     const postById = new Map(posts.map((p) => [p.id, p]));
     const userById = new Map(users.map((u) => [u.id, u]));
+    const avatarById = new Map(
+      await Promise.all(
+        users.map(
+          async (u) => [u.id, await resolveAvatar(this.storage, u)] as const,
+        ),
+      ),
+    );
     const unreadByConv = new Map(
       unreadRows.map((r) => [r.conversation_id, Number(r.cnt)]),
     );
@@ -341,7 +354,7 @@ export class ConversationsService {
         counterpart: {
           id: counterpart?.id ?? counterpartId,
           fullName: counterpart?.fullName ?? "",
-          avatarUrl: counterpart?.avatarUrl ?? null,
+          ...(avatarById.get(counterpartId) ?? { avatarUrl: null }),
         },
         role: isBuyer ? ("buyer" as const) : ("seller" as const),
         lastMessageId: conv.lastMessageId,

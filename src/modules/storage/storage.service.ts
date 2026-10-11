@@ -20,6 +20,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { uuidv7 } from "uuidv7";
 import { r2Config, uploadConfig } from "../../config/r2.config";
 import {
+  AVATAR_IMAGE_KEY_REGEX,
   CONTENT_TYPE_TO_EXTENSION,
   MESSAGE_IMAGE_CONTENT_TYPES,
   MESSAGE_IMAGE_KEY_REGEX,
@@ -111,10 +112,29 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
+  static isAvatarImageKeyOwnedBy(key: unknown, userId: string): boolean {
+    return (
+      typeof key === "string" &&
+      AVATAR_IMAGE_KEY_REGEX.test(key) &&
+      key.split("/")[1] === userId.toLowerCase()
+    );
+  }
+
+  async verifyAvatarImage(key: string, userId: string): Promise<void> {
+    if (!StorageService.isAvatarImageKeyOwnedBy(key, userId)) {
+      throw new BadRequestException("Invalid avatar image key or owner");
+    }
+    await this.verifyImageMetadata(key);
+  }
+
   async verifyPostImage(key: string, userId: string): Promise<void> {
     if (!StorageService.isPostImageKeyOwnedBy(key, userId)) {
       throw new BadRequestException("Invalid post image key or owner");
     }
+    await this.verifyImageMetadata(key);
+  }
+
+  private async verifyImageMetadata(key: string): Promise<void> {
     const head = await this.headObject(key);
     if (!head) throw new BadRequestException("Image has not been uploaded");
     const extension = key.split(".").pop();
@@ -160,7 +180,12 @@ export class StorageService implements OnModuleInit, OnModuleDestroy {
       );
     }
 
-    const prefix = purpose === "post" ? "posts" : "messages";
+    const prefix =
+      purpose === "avatar"
+        ? "avatars"
+        : purpose === "post"
+          ? "posts"
+          : "messages";
     const key = `${prefix}/${userId.toLowerCase()}/${uuidv7()}.${ext}`;
     const command = new PutObjectCommand({
       Bucket: this.r2.bucketName,

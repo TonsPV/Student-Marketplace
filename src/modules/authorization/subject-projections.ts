@@ -377,7 +377,11 @@ export function normalizeCreateCandidate(
       };
     }
     case "Upload":
-      if (raw.purpose !== "message" && raw.purpose !== "post")
+      if (
+        raw.purpose !== "message" &&
+        raw.purpose !== "post" &&
+        raw.purpose !== "avatar"
+      )
         throw new BadRequestException("Unsupported upload purpose");
       return {
         ownerId: assertUuid(raw.ownerId, "Upload.ownerId"),

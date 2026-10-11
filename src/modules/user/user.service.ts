@@ -1,11 +1,15 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import { QueryFailedError, Repository } from "typeorm";
+import { StorageService } from "../storage/storage.service";
+import { resolveAvatar } from "../storage/avatar-response";
+import { UpdateAvatarDto } from "./dto/update-avatar.dto";
 import { UserEntity } from "./user.entity";
 import { RegisterUserDto } from "../auth/dto/register.dto";
 import { UpdateUserDto } from "./dto/update-user.dto";
@@ -24,6 +28,7 @@ export class UserService {
     @InjectRepository(UserEntity)
     private userRepository: Repository<UserEntity>,
     private readonly authorization: AuthorizationService,
+    private readonly storage: StorageService,
   ) {}
 
   findOneByEmail(email: string) {
@@ -157,21 +162,60 @@ export class UserService {
       id: context.principal.id,
     });
     const effective = this.authorization.effectivePatch(patch);
-    const updated = await this.userRepository.save({
-      ...full,
-      ...effective,
-    });
-    return this.toProfile(updated);
+    if (Object.prototype.hasOwnProperty.call(effective, "avatarUrl")) {
+      effective.avatarStorageKey = null;
+    }
+    if (Object.keys(effective).length)
+      await this.userRepository.update(full.id, effective);
+    return this.toProfile(
+      await this.userRepository.findOneByOrFail({ id: full.id }),
+    );
   }
 
-  private toProfile(user: UserEntity) {
+  async updateAvatar(dto: UpdateAvatarDto, context: AuthenticatedContext) {
+    if (Object.keys(dto).some((field) => field !== "key")) {
+      throw new BadRequestException("Unknown avatar field");
+    }
+    return this.userRepository.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(UserEntity);
+      const user = await repository.findOne({
+        where: { id: context.principal.id },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!user || user.deletedAt)
+        throw new NotFoundException("User not found");
+      if (user.isLocked) throw new ForbiddenException("Account is locked");
+      this.authorization.assertUpdateFields(
+        context,
+        "update",
+        "User",
+        toUserProjection(user) as unknown as Record<string, unknown>,
+        { avatarUrl: dto.key },
+      );
+      await this.storage.verifyAvatarImage(dto.key, user.id);
+      const avatar = await resolveAvatar(this.storage, {
+        id: user.id,
+        avatarStorageKey: dto.key,
+      });
+      await repository.update(user.id, {
+        avatarStorageKey: dto.key,
+        avatarUrl: null,
+      });
+      return this.toProfile(user, avatar);
+    });
+  }
+
+  private async toProfile(
+    user: UserEntity,
+    avatar?: Awaited<ReturnType<typeof resolveAvatar>>,
+  ) {
     return {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
       university: user.university,
       phone: user.phone,
-      avatarUrl: user.avatarUrl,
+      ...(avatar ?? (await resolveAvatar(this.storage, user))),
       createdAt: user.createdAt,
     };
   }

@@ -16,6 +16,6 @@ export function definePersonalResourceRules(
   can("markRead", "Notification", { userId: actor.id });
   can("create", "Upload", {
     ownerId: actor.id,
-    purpose: { $in: ["message", "post"] },
+    purpose: { $in: ["message", "post", "avatar"] },
   });
 }

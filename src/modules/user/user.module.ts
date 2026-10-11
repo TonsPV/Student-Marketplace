@@ -1,3 +1,4 @@
+import { StorageModule } from "../storage/storage.module";
 import { Module } from "@nestjs/common";
 import { UserService } from "./user.service";
 import { UserController } from "./user.controller";
@@ -11,6 +12,7 @@ import { AccountLifecycleModule } from "../../common/account-lifecycle/account-l
   imports: [
     TypeOrmModule.forFeature([UserEntity]),
     AuthorizationModule,
+    StorageModule,
     AccountLifecycleModule,
   ],
   controllers: [UserController],
