@@ -79,7 +79,7 @@ export class PostImagesService {
   }
 
   async findAll(postId: string, context: AuthorizationContext) {
-    const post = await this.postsService.getActivePost(postId);
+    const post = await this.postsService.getReadablePost(postId);
     {
       this.authorization.assertResource(
         context,

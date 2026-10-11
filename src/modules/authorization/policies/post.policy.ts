@@ -13,8 +13,8 @@ export const POST_UPDATE_FIELDS = [
   "condition",
   "location",
   "locationName",
-  "location.type",
-  "location.coordinates",
+  "location.latitude",
+  "location.longitude",
 ] as const;
 
 export function definePostRules(
@@ -22,10 +22,16 @@ export function definePostRules(
   actor: AuthenticatedPrincipal | null,
 ): void {
   if (!actor) {
-    can("read", "Post", { status: PostStatus.ACTIVE, deletedAt: null });
+    can("read", "Post", {
+      status: { $in: [PostStatus.ACTIVE, PostStatus.SOLD] },
+      deletedAt: null,
+    });
     return;
   }
-  can("read", "Post", { status: PostStatus.ACTIVE, deletedAt: null });
+  can("read", "Post", {
+    status: { $in: [PostStatus.ACTIVE, PostStatus.SOLD] },
+    deletedAt: null,
+  });
   can("read", "Post", { sellerId: actor.id, deletedAt: null });
   can("create", "Post", { sellerId: actor.id });
   can("update", "Post", [...POST_UPDATE_FIELDS], { sellerId: actor.id });

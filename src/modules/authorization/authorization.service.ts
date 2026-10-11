@@ -199,16 +199,26 @@ export class AuthorizationService {
       if (typeof loc !== "object" || Array.isArray(loc)) {
         throw new BadRequestException("Invalid field: location");
       }
-      const allowedKeys = new Set(["type", "coordinates"]);
+      const allowedKeys = new Set(["latitude", "longitude"]);
       for (const k of Object.getOwnPropertyNames(loc)) {
         if (!allowedKeys.has(k)) {
           throw new BadRequestException("Invalid field: location." + k);
         }
       }
-      if (!Object.hasOwn(loc, "type") || !Object.hasOwn(loc, "coordinates")) {
+      if (!Object.hasOwn(loc, "latitude") || !Object.hasOwn(loc, "longitude")) {
         throw new BadRequestException("Invalid location shape");
       }
-      out.location = { type: loc.type, coordinates: loc.coordinates };
+      if (
+        typeof loc.latitude !== "number" ||
+        !Number.isFinite(loc.latitude) ||
+        Math.abs(loc.latitude) > 90 ||
+        typeof loc.longitude !== "number" ||
+        !Number.isFinite(loc.longitude) ||
+        Math.abs(loc.longitude) > 180
+      ) {
+        throw new BadRequestException("Invalid location coordinates");
+      }
+      out.location = { latitude: loc.latitude, longitude: loc.longitude };
     }
     return out;
   }

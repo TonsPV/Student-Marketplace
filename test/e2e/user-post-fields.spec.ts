@@ -18,6 +18,8 @@ import { UpdateUserDto } from "../../src/modules/user/dto/update-user.dto";
 import { AuthService } from "../../src/modules/auth/services/auth.service";
 import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
 import { PostsService } from "../../src/modules/posts/posts.service";
+import { PostImageEntity } from "../../src/modules/post-images/post-image.entity";
+import { ReviewEntity } from "../../src/modules/reviews/review.entity";
 import { UserService } from "../../src/modules/user/user.service";
 import {
   createTestDataSource,
@@ -204,8 +206,11 @@ describe("university and locationName API contracts", () => {
     ).toBe("Cổng chính");
     const detail = await http().get(`/api/v1/posts/${post.id}`).expect(200);
     expect(detail.body.data.locationName).toBe("Cổng chính");
-    expect(detail.body.data.location.coordinates).toEqual([106.7, 10.77]);
-    expect(detail.body.data.seller).not.toHaveProperty("university");
+    expect(detail.body.data.location).toEqual({
+      latitude: 10.77,
+      longitude: 106.7,
+    });
+    expect(detail.body.data.seller).toHaveProperty("university", null);
     for (const path of [
       "posts?limit=100",
       "posts/me?limit=100",
@@ -220,6 +225,9 @@ describe("university and locationName API contracts", () => {
           (item: { id: string }) => item.id === post.id,
         ).locationName,
       ).toBe("Cổng chính");
+      expect(
+        response.body.data.items.find((item: { id: string }) => item.id === post.id).location,
+      ).toEqual({ latitude: 10.77, longitude: 106.7 });
     }
     expect(
       (await patchPost(post.id, { locationName: null }).expect(200)).body.data
@@ -230,6 +238,24 @@ describe("university and locationName API contracts", () => {
       .findOneByOrFail({ id: post.id });
     expect(saved.locationName).toBeNull();
     expect(saved.location?.coordinates).toEqual([106.7, 10.77]);
+  });
+
+  it("creates and updates named coordinates while DB keeps GeoJSON; null clears location", async () => {
+    const location = { latitude: 10.77, longitude: 106.7 };
+    const created = await http().post("/api/v1/posts").set(auth(owner))
+      .send({ ...body(), location }).expect(201);
+    const id = created.body.data.id;
+    expect(created.body.data.location).toEqual(location);
+    expect((await ds.getRepository(PostEntity).findOneByOrFail({ id })).location?.coordinates).toEqual([106.7, 10.77]);
+    const next = { latitude: 0, longitude: 0 };
+    expect((await patchPost(id, { location: next }).expect(200)).body.data.location).toEqual(next);
+    expect((await patchPost(id, { title: "Giữ nguyên vị trí" }).expect(200)).body.data.location).toEqual(next);
+    for (const invalid of [{ latitude: 91, longitude: 106 }, { latitude: 10, longitude: 181 }, { latitude: "10", longitude: 106 }, { latitude: 10 }, { type: "Point", coordinates: [106, 10] }, { ...next, extra: true }]) {
+      await patchPost(id, { location: invalid }).expect(400);
+      await http().post("/api/v1/posts").set(auth(owner)).send({ ...body(), location: invalid }).expect(400);
+    }
+    expect((await patchPost(id, { location: null }).expect(200)).body.data.location).toBeNull();
+    expect((await ds.getRepository(PostEntity).findOneByOrFail({ id })).location).toBeNull();
   });
 
   it("accepts the length boundaries after trimming", async () => {
@@ -379,6 +405,47 @@ describe("university and locationName API contracts", () => {
           )
       ).university,
     ).toBe("Trường mới");
+  });
+
+  it("serves sold detail/images, real seller aggregates, and filters related posts before pagination", async () => {
+    const seller = await createTestUser(ds, { university: "ĐH Công Nghệ Thông Tin", phone: "0912345678" });
+    const active = await createTestPost(ds, seller.id, categoryId, { location: { type: "Point", coordinates: [106.8, 10.8] }, locationName: "KTX Khu B" });
+    const related = await createTestPost(ds, seller.id, categoryId);
+    const sold = await createTestPost(ds, seller.id, categoryId, { status: PostStatus.SOLD });
+    const hidden = await createTestPost(ds, seller.id, categoryId, { status: PostStatus.HIDDEN });
+    const deleted = await createTestPost(ds, seller.id, categoryId, { status: PostStatus.SOLD });
+    await ds.getRepository(PostEntity).softDelete(deleted.id);
+    for (const [post, rating] of [[active, 4], [sold, 5], [hidden, 3], [deleted, 1]] as const) {
+      await ds.getRepository(ReviewEntity).save({ id: randomUUID(), postId: post.id, reviewerId: outsider.id, rating });
+    }
+    const imageIds = [randomUUID(), randomUUID()].sort();
+    for (const id of imageIds) await ds.getRepository(PostImageEntity).save({ id, postId: sold.id, url: `https://images.example.test/${id}.jpg` });
+    for (const post of [active, sold]) {
+      for (const headers of [{}, auth(outsider)]) {
+        const result = await http().get(`/api/v1/posts/${post.id}`).set(headers).expect(200);
+        expect(result.body.data.seller).toMatchObject({ id: seller.id, university: seller.university, ratingAverage: 4, reviewCount: 3, soldCount: 1 });
+        expect(result.body.data.seller.createdAt).toBeTruthy();
+        expect(Object.keys(result.body.data.seller)).not.toEqual(expect.arrayContaining(["email", "phone", "password", "isAdmin", "location", "avatarStorageKey"]));
+        for (const key of ["email", "phone", "password", "isAdmin", "location", "avatarStorageKey"]) expect(result.body.data.seller).not.toHaveProperty(key);
+      }
+    }
+    const images = await http().get(`/api/v1/posts/${sold.id}/images`).expect(200);
+    expect(images.body.data.map((image: { id: string }) => image.id)).toEqual(imageIds);
+    expect(images.body.data.every((image: object) => !("storageKey" in image))).toBe(true);
+    for (const post of [hidden, deleted]) {
+      await http().get(`/api/v1/posts/${post.id}`).expect(404);
+      await http().get(`/api/v1/posts/${post.id}/images`).expect(404);
+    }
+    await http().post("/api/v1/favorites").set(auth(outsider)).send({ postId: sold.id }).expect(404);
+    await http().post("/api/v1/conversations").set(auth(outsider)).send({ postId: sold.id }).expect(404);
+    const search = await http().get(`/api/v1/posts/search?sellerId=${seller.id}&excludePostId=${active.id}&limit=1`).expect(200);
+    expect(search.body.data.items.map((post: { id: string }) => post.id)).toEqual([related.id]);
+    expect(search.body.data.meta).toMatchObject({ total: 1, totalPages: 1 });
+    await http().get("/api/v1/posts/search?sellerId=invalid").expect(400);
+    await http().get("/api/v1/posts/search?excludePostId=invalid").expect(400);
+    const fresh = await createTestPost(ds, (await createTestUser(ds)).id, categoryId);
+    const noReviews = await http().get(`/api/v1/posts/${fresh.id}`).expect(200);
+    expect(noReviews.body.data.seller).toMatchObject({ ratingAverage: null, reviewCount: 0, soldCount: 0 });
   });
 
   it("documents nullable optional strings on registration, profile and post DTOs", () => {

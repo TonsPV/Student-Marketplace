@@ -4,7 +4,8 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Brackets, DataSource, EntityManager, Repository } from "typeorm";
+import { Brackets, DataSource, EntityManager, In, Repository } from "typeorm";
+import { ReviewEntity } from "../reviews/review.entity";
 
 import { createPaginationMeta } from "../../common/utils/pagination.util";
 import { CategoryEntity } from "../categories/category.entity";
@@ -59,12 +60,12 @@ export class PostsService {
       description: dto.description,
       price: dto.price,
       condition: dto.condition,
-      location: dto.location,
+      location: this.toStoredLocation(dto.location),
       locationName: dto.locationName ?? null,
       sellerId: context.principal.id,
     });
 
-    return this.postsRepository.save(post);
+    return this.toResponse(await this.postsRepository.save(post));
   }
 
   async findAll(query: FindPostsDto, context: AuthorizationContext) {
@@ -132,7 +133,7 @@ export class PostsService {
     });
 
     return {
-      items,
+      items: items.map((post) => this.toResponse(post)),
       meta: createPaginationMeta(query, total),
     };
   }
@@ -181,6 +182,17 @@ export class PostsService {
 
     if (categoryId) {
       queryBuilder.andWhere("post.category_id = :categoryId", { categoryId });
+    }
+
+    if (query.sellerId) {
+      queryBuilder.andWhere("post.seller_id = :sellerId", {
+        sellerId: query.sellerId,
+      });
+    }
+    if (query.excludePostId) {
+      queryBuilder.andWhere("post.id != :excludePostId", {
+        excludePostId: query.excludePostId,
+      });
     }
 
     if (minPrice !== undefined) {
@@ -234,7 +246,7 @@ export class PostsService {
     const post = await this.postsRepository.findOne({
       where: {
         id,
-        status: PostStatus.ACTIVE,
+        status: In([PostStatus.ACTIVE, PostStatus.SOLD]),
       },
       relations: {
         seller: true,
@@ -246,6 +258,8 @@ export class PostsService {
           fullName: true,
           avatarUrl: true,
           avatarStorageKey: true,
+          university: true,
+          createdAt: true,
         },
         category: {
           id: true,
@@ -271,14 +285,59 @@ export class PostsService {
       );
     }
 
-    return this.withSellerAvatar(post);
+    const result = await this.withSellerAvatar(post);
+    const [reviews, soldCount] = await Promise.all([
+      this.dataSource
+        .getRepository(ReviewEntity)
+        .createQueryBuilder("review")
+        .innerJoin("review.post", "post")
+        .where("post.sellerId = :sellerId", { sellerId: post.sellerId })
+        .select("AVG(review.rating)", "ratingAverage")
+        .addSelect("COUNT(review.id)", "reviewCount")
+        .getRawOne<{ ratingAverage: string | null; reviewCount: string }>(),
+      this.postsRepository.countBy({
+        sellerId: post.sellerId,
+        status: PostStatus.SOLD,
+      }),
+    ]);
+    // Public seller projection: never serialize account credentials or contact details.
+    return {
+      ...result,
+      seller: result.seller
+        ? {
+            id: result.seller.id,
+            fullName: result.seller.fullName,
+            avatarUrl: result.seller.avatarUrl,
+            ...("avatarUrlExpiresAt" in result.seller
+              ? { avatarUrlExpiresAt: result.seller.avatarUrlExpiresAt }
+              : {}),
+            university: post.seller.university,
+            createdAt: post.seller.createdAt,
+            ratingAverage:
+              reviews?.ratingAverage == null
+                ? null
+                : Number(reviews.ratingAverage),
+            reviewCount: Number(reviews?.reviewCount ?? 0),
+            soldCount,
+          }
+        : null,
+    };
+  }
+
+  async getReadablePost(id: string) {
+    const post = await this.postsRepository.findOne({
+      where: { id, status: In([PostStatus.ACTIVE, PostStatus.SOLD]) },
+    });
+    if (!post) throw new NotFoundException("Post not found");
+    return post;
   }
 
   async withSellerAvatar(post: PostEntity) {
-    if (!post.seller) return post;
+    const result = this.toResponse(post);
+    if (!post.seller) return result;
     const { avatarStorageKey: _key, ...seller } = post.seller;
     return {
-      ...post,
+      ...result,
       seller: {
         ...seller,
         ...(await resolveAvatar(this.storage, post.seller)),
@@ -328,8 +387,13 @@ export class PostsService {
         await this.ensureCategoryExists(dto.categoryId, manager);
       }
       const effective = this.authorization.effectivePatch(patch);
+      if (Object.hasOwn(effective, "location")) {
+        effective.location = this.toStoredLocation(dto.location);
+      }
       Object.assign(post, effective);
-      return manager.getRepository(PostEntity).save(post);
+      return this.toResponse(
+        await manager.getRepository(PostEntity).save(post),
+      );
     });
   }
 
@@ -357,7 +421,9 @@ export class PostsService {
         throw new BadRequestException("Hidden posts cannot be marked as sold");
       }
       post.status = PostStatus.SOLD;
-      return manager.getRepository(PostEntity).save(post);
+      return this.toResponse(
+        await manager.getRepository(PostEntity).save(post),
+      );
     });
   }
 
@@ -407,10 +473,10 @@ export class PostsService {
         }) as unknown as Record<string, unknown>,
       );
       if (!post.deletedAt) {
-        return post;
+        return this.toResponse(post);
       }
       await repo.restore(id);
-      return repo.findOneByOrFail({ id });
+      return this.toResponse(await repo.findOneByOrFail({ id }));
     });
   }
 
@@ -472,6 +538,29 @@ export class PostsService {
       }) as unknown as Record<string, unknown>,
     );
     return post;
+  }
+
+  private toStoredLocation(
+    location: CreatePostDto["location"],
+  ): PostEntity["location"] {
+    return location == null
+      ? null
+      : {
+          type: "Point",
+          coordinates: [location.longitude, location.latitude],
+        };
+  }
+
+  private toResponse(post: PostEntity) {
+    return {
+      ...post,
+      location: post.location
+        ? {
+            latitude: post.location.coordinates[1],
+            longitude: post.location.coordinates[0],
+          }
+        : null,
+    };
   }
 
   private async ensureCategoryExists(

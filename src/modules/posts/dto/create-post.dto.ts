@@ -1,12 +1,7 @@
 import { Transform, Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
-  ArrayMaxSize,
-  ArrayMinSize,
   IsEnum,
-  IsIn,
-  IsArray,
-  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -15,17 +10,7 @@ import {
   ValidateNested,
 } from "class-validator";
 import { PostCondition } from "../post.entity";
-
-class LocationDto {
-  @IsIn(["Point"])
-  type!: "Point";
-
-  @IsArray()
-  @ArrayMinSize(2)
-  @ArrayMaxSize(2)
-  @IsNumber({}, { each: true })
-  coordinates!: [number, number]; // [longitude, latitude]
-}
+import { UpdateLocationDto } from "../../user/dto/update-location.dto";
 
 export class CreatePostDto {
   @ApiPropertyOptional({
@@ -72,11 +57,13 @@ export class CreatePostDto {
   condition!: PostCondition;
 
   @ApiPropertyOptional({
-    example: { type: "Point", coordinates: [106.7009, 10.7769] },
-    description: "GeoJSON Point: coordinates are [longitude, latitude].",
+    type: UpdateLocationDto,
+    example: { latitude: 10.7769, longitude: 106.7009 },
+    description: "Location in degrees, using the same format as user location.",
+    nullable: true,
   })
   @IsOptional()
   @ValidateNested()
-  @Type(() => LocationDto)
-  location?: LocationDto;
+  @Type(() => UpdateLocationDto)
+  location?: UpdateLocationDto | null;
 }

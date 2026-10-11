@@ -119,6 +119,7 @@ Project dùng TypeORM với PostgreSQL driver `pg`. `POSTGRES_SYNCHRONIZE` mặc
 
 - `university`: chuỗi tùy chọn, tối đa 150 ký tự; nhận ở `POST /api/v1/auth/register` và `PATCH /api/v1/user/me`, trả trong profile. Tài khoản Google mới có giá trị `NULL`.
 - `locationName`: chuỗi tùy chọn, tối đa 255 ký tự; nhận ở `POST /api/v1/posts` và `PATCH /api/v1/posts/:id`, trả trong post. Tên địa điểm độc lập với tọa độ `location`.
+- `location` của post nhận/trả `{ "latitude": 10.7769, "longitude": 106.7009 }`, cùng format với user. Latitude nằm trong [-90, 90], longitude trong [-180, 180]. PATCH bỏ qua field thì giữ vị trí cũ; gửi `null` để xóa. DB vẫn lưu `geography(Point, 4326)`, không cần migration. Payload GeoJSON cũ không còn được nhận. Query tìm kiếm theo khoảng cách vẫn dùng `lat`, `lng`, `radius`.
 - Hai field được trim trước validation. Chuỗi rỗng/sai kiểu/quá dài bị từ chối. Khi tạo, bỏ field hoặc gửi `null` lưu `NULL`; khi PATCH, bỏ field giữ giá trị cũ và gửi `null` xóa giá trị.
 
 Trước khi triển khai BE mới, cấu hình đúng DB và `POSTGRES_SCHEMA`, giữ `POSTGRES_SYNCHRONIZE=false`, rồi chạy:
