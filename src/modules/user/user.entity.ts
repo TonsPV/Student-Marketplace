@@ -50,7 +50,7 @@ export class UserEntity extends BaseEntity {
     srid: 4326,
     nullable: true,
   })
-  location!: string;
+  location!: { type: "Point"; coordinates: [number, number] } | null;
 
   @Column({ default: false, name: "is_locked" })
   isLocked!: boolean;

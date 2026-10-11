@@ -113,7 +113,16 @@ export class UserService {
         isLocked: user.isLocked,
       }) as unknown as Record<string, unknown>,
     );
-    return this.toProfile(user);
+    return {
+      ...(await this.toProfile(user)),
+      isAdmin: user.isAdmin,
+      location: user.location
+        ? {
+            latitude: user.location.coordinates[1],
+            longitude: user.location.coordinates[0],
+          }
+        : null,
+    };
   }
 
   async getUserProfile(userId: string, context: AuthorizationContext) {
