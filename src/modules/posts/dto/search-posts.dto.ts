@@ -19,6 +19,15 @@ const hasLocationFilter = (dto: SearchPostsDto): boolean =>
     dto.radius !== undefined;
 
 export class SearchPostsDto {
+    @ApiPropertyOptional({ type: String, format: 'uuid' })
+    @IsOptional()
+    @IsUUID()
+    sellerId?: string;
+
+    @ApiPropertyOptional({ type: String, format: 'uuid' })
+    @IsOptional()
+    @IsUUID()
+    excludePostId?: string;
     @ApiPropertyOptional({
         type: String,
         example: 'iphone',

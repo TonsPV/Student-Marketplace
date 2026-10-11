@@ -39,6 +39,8 @@ describe("CASL ability (spec U01-U10)", () => {
       guest.can("read", subject("Post", { status: "hidden", deletedAt: null })),
     ).toBe(false);
     expect(guest.can("read", "Category")).toBe(true);
+    expect(guest.can("read", subject("Post", { status: "sold", deletedAt: null }))).toBe(true);
+    expect(guest.can("read", subject("Post", { status: "sold", deletedAt: new Date() }))).toBe(false);
     expect(guest.can("read", "Review")).toBe(true);
     expect(guest.can("create", "Post")).toBe(false);
     expect(guest.can("update", "Post")).toBe(false);

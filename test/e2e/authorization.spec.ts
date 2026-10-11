@@ -691,7 +691,7 @@ describe("CASL HTTP and WS authorization contracts", () => {
       await request(app.getHttpServer())
         .get("/api/v1/posts/" + target.id)
         .set("Authorization", "Bearer " + token(seller))
-        .expect(404);
+        .expect(status === PostStatus.SOLD ? 200 : 404);
     }
     await api(buyer)
       .delete("favorites/" + target.id)
