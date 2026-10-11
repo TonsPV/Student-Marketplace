@@ -86,6 +86,14 @@ export class PostEntity extends BaseEntity {
   })
   location!: Point | null;
 
+  @Column({
+    name: "location_name",
+    type: "varchar",
+    length: 255,
+    nullable: true,
+  })
+  locationName!: string | null;
+
   @OneToMany(() => PostImageEntity, (image) => image.post)
   images!: PostImageEntity[];
 

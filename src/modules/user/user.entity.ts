@@ -27,6 +27,9 @@ export class UserEntity extends BaseEntity {
   @Column({ name: "full_name" })
   fullName!: string;
 
+  @Column({ name: "university", type: "varchar", length: 150, nullable: true })
+  university!: string | null;
+
   @Column({ type: "varchar", nullable: true })
   phone!: string | null;
 
@@ -34,12 +37,20 @@ export class UserEntity extends BaseEntity {
   avatarUrl!: string | null;
 
   @Column({
+    name: "avatar_storage_key",
+    type: "varchar",
+    length: 256,
+    nullable: true,
+  })
+  avatarStorageKey!: string | null;
+
+  @Column({
     type: "geography",
     spatialFeatureType: "Point",
     srid: 4326,
     nullable: true,
   })
-  location!: string;
+  location!: { type: "Point"; coordinates: [number, number] } | null;
 
   @Column({ default: false, name: "is_locked" })
   isLocked!: boolean;

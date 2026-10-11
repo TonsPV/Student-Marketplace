@@ -1,13 +1,22 @@
-import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsOptional,
-  IsString,
-  IsUrl,
-  Length,
-  MaxLength,
-} from 'class-validator';
+import { Transform } from "class-transformer";
+import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { IsOptional, IsString, IsUrl, Length } from "class-validator";
 
 export class UpdateUserDto {
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    minLength: 1,
+    maxLength: 150,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim() : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Length(1, 150)
+  university?: string | null;
+
   @ApiProperty()
   @IsOptional()
   @IsString()
@@ -24,5 +33,4 @@ export class UpdateUserDto {
   @IsOptional()
   @IsUrl()
   avatarUrl!: string;
-
 }

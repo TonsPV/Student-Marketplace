@@ -31,8 +31,9 @@ const UPDATE_FIELDS: Partial<Record<SubjectName, readonly string[]>> = {
     "price",
     "condition",
     "location",
+    "locationName",
   ],
-  User: ["fullName", "phone", "avatarUrl"],
+  User: ["fullName", "phone", "avatarUrl", "university"],
   Review: ["rating", "comment"],
   Category: ["name", "parentId"],
 };

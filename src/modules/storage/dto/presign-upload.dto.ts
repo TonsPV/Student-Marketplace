@@ -5,7 +5,7 @@ import {
   SUPPORTED_UPLOAD_PURPOSES,
 } from "../storage.constants";
 
-/** Upload directly to R2, then attach the returned key to a message or post. */
+/** Upload directly to R2, then attach the returned key to a message, post or avatar. */
 export class PresignUploadDto {
   @ApiProperty({ enum: SUPPORTED_UPLOAD_PURPOSES, example: "message" })
   @IsString()

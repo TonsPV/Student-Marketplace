@@ -32,5 +32,9 @@ export const MESSAGE_IMAGE_KEY_REGEX =
 export const POST_IMAGE_KEY_REGEX =
   /^posts\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$/;
 
-export const SUPPORTED_UPLOAD_PURPOSES = ["message", "post"] as const;
+export const AVATAR_IMAGE_KEY_REGEX = new RegExp(
+  POST_IMAGE_KEY_REGEX.source.replace("posts", "avatars"),
+);
+
+export const SUPPORTED_UPLOAD_PURPOSES = ["message", "post", "avatar"] as const;
 export type UploadPurpose = (typeof SUPPORTED_UPLOAD_PURPOSES)[number];

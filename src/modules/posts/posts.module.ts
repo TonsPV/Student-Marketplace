@@ -1,3 +1,4 @@
+import { StorageModule } from "../storage/storage.module";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { CategoryEntity } from "../categories/category.entity";
@@ -10,6 +11,7 @@ import { AuthorizationModule } from "../authorization/authorization.module";
   imports: [
     TypeOrmModule.forFeature([PostEntity, CategoryEntity]),
     AuthorizationModule,
+    StorageModule,
   ],
   controllers: [PostsController],
   providers: [PostsService],

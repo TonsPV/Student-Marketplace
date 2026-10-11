@@ -4,7 +4,12 @@ import type {
   AuthenticatedPrincipal,
 } from "../authorization.types";
 
-export const USER_UPDATE_FIELDS = ["fullName", "phone", "avatarUrl"] as const;
+export const USER_UPDATE_FIELDS = [
+  "fullName",
+  "phone",
+  "avatarUrl",
+  "university",
+] as const;
 
 export function defineUserRules(
   can: AbilityBuilder<AppAbility>["can"],

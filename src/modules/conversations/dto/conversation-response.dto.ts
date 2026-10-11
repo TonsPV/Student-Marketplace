@@ -1,3 +1,5 @@
+import { ApiPropertyOptional } from "@nestjs/swagger";
+
 export type ConversationRole = "buyer" | "seller";
 
 export class ConversationPostDto {
@@ -12,6 +14,9 @@ export class ConversationCounterpartDto {
   id!: string;
   fullName!: string;
   avatarUrl!: string | null;
+
+  @ApiPropertyOptional({ description: "Signed avatar URL expiry (ISO 8601)" })
+  avatarUrlExpiresAt?: string;
 }
 
 /**

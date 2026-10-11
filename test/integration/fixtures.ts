@@ -26,7 +26,7 @@ export async function createTestUser(
     fullName: "Test User",
     phone: null,
     avatarUrl: null,
-    location: null as unknown as string,
+    location: null,
     isLocked: false,
     isAdmin: false,
     ...overrides,
