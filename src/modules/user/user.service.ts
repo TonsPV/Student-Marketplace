@@ -169,6 +169,7 @@ export class UserService {
       id: user.id,
       email: user.email,
       fullName: user.fullName,
+      university: user.university,
       phone: user.phone,
       avatarUrl: user.avatarUrl,
       createdAt: user.createdAt,
@@ -180,6 +181,7 @@ export class UserService {
       email: data.email,
       password: hashSync(data.password, 10),
       fullName: data.fullName,
+      university: data.university ?? null,
       phone: data.phone,
     });
 

@@ -1,4 +1,4 @@
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
   ArrayMaxSize,
@@ -28,6 +28,20 @@ class LocationDto {
 }
 
 export class CreatePostDto {
+  @ApiPropertyOptional({
+    type: String,
+    nullable: true,
+    minLength: 1,
+    maxLength: 255,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === "string" ? value.trim() : value,
+  )
+  @IsOptional()
+  @IsString()
+  @Length(1, 255)
+  locationName?: string | null;
+
   @ApiProperty({ format: "uuid" })
   @IsUUID()
   categoryId!: string;
@@ -44,7 +58,8 @@ export class CreatePostDto {
 
   @ApiProperty({
     example: "50000",
-    description: "Price in VND. Send an integer as a string to avoid floating-point errors.",
+    description:
+      "Price in VND. Send an integer as a string to avoid floating-point errors.",
   })
   @IsString()
   @Matches(/^\d+$/, {

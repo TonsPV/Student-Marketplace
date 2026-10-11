@@ -12,6 +12,7 @@ export const POST_UPDATE_FIELDS = [
   "price",
   "condition",
   "location",
+  "locationName",
   "location.type",
   "location.coordinates",
 ] as const;

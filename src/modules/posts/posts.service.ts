@@ -43,6 +43,7 @@ export class PostsService {
       "price",
       "condition",
       "location",
+      "locationName",
     ]);
     if (Object.keys(input).some((field) => !fields.has(field))) {
       throw new BadRequestException("Unknown post field");
@@ -56,6 +57,7 @@ export class PostsService {
       price: dto.price,
       condition: dto.condition,
       location: dto.location,
+      locationName: dto.locationName ?? null,
       sellerId: context.principal.id,
     });
 
