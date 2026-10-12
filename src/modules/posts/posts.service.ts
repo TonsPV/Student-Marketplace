@@ -4,13 +4,22 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { Brackets, DataSource, EntityManager, In, Repository } from "typeorm";
-import { ReviewEntity } from "../reviews/review.entity";
+import {
+  Brackets,
+  DataSource,
+  EntityManager,
+  In,
+  IsNull,
+  Not,
+  Repository,
+} from "typeorm";
+import { sellerStatistics } from "../reviews/seller-statistics";
 
 import { createPaginationMeta } from "../../common/utils/pagination.util";
 import { CategoryEntity } from "../categories/category.entity";
 import { CreatePostDto } from "./dto/create-post.dto";
 import { FindPostsDto } from "./dto/find-posts.dto";
+import { FindMyPostsDto } from "./dto/find-my-posts.dto";
 import { SearchPostsDto } from "./dto/search-posts.dto";
 import { UpdatePostDto } from "./dto/update-post.dto";
 import { PostEntity, PostStatus } from "./post.entity";
@@ -108,12 +117,15 @@ export class PostsService {
     };
   }
 
-  async findMyPosts(context: AuthenticatedContext, query: FindPostsDto) {
+  async findMyPosts(context: AuthenticatedContext, query: FindMyPostsDto) {
     this.authorization.assertRoute(context, "read", "Post");
     const { page, limit, categoryId } = query;
     const [items, total] = await this.postsRepository.findAndCount({
+      withDeleted: query.deleted === "true",
       where: {
         sellerId: context.principal.id,
+        ...(query.deleted === "true" ? { deletedAt: Not(IsNull()) } : {}),
+        ...(query.status ? { status: query.status } : {}),
         ...(categoryId ? { categoryId } : {}),
       },
       relations: {
@@ -286,20 +298,7 @@ export class PostsService {
     }
 
     const result = await this.withSellerAvatar(post);
-    const [reviews, soldCount] = await Promise.all([
-      this.dataSource
-        .getRepository(ReviewEntity)
-        .createQueryBuilder("review")
-        .innerJoin("review.post", "post")
-        .where("post.sellerId = :sellerId", { sellerId: post.sellerId })
-        .select("AVG(review.rating)", "ratingAverage")
-        .addSelect("COUNT(review.id)", "reviewCount")
-        .getRawOne<{ ratingAverage: string | null; reviewCount: string }>(),
-      this.postsRepository.countBy({
-        sellerId: post.sellerId,
-        status: PostStatus.SOLD,
-      }),
-    ]);
+    const stats = await sellerStatistics(this.dataSource, post.sellerId);
     // Public seller projection: never serialize account credentials or contact details.
     return {
       ...result,
@@ -313,12 +312,7 @@ export class PostsService {
               : {}),
             university: post.seller.university,
             createdAt: post.seller.createdAt,
-            ratingAverage:
-              reviews?.ratingAverage == null
-                ? null
-                : Number(reviews.ratingAverage),
-            reviewCount: Number(reviews?.reviewCount ?? 0),
-            soldCount,
+            ...stats,
           }
         : null,
     };

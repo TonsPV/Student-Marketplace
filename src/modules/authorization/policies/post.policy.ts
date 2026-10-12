@@ -32,7 +32,7 @@ export function definePostRules(
     status: { $in: [PostStatus.ACTIVE, PostStatus.SOLD] },
     deletedAt: null,
   });
-  can("read", "Post", { sellerId: actor.id, deletedAt: null });
+  can("read", "Post", { sellerId: actor.id });
   can("create", "Post", { sellerId: actor.id });
   can("update", "Post", [...POST_UPDATE_FIELDS], { sellerId: actor.id });
   can("markSold", "Post", { sellerId: actor.id });

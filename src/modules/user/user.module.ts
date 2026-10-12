@@ -2,6 +2,7 @@ import { StorageModule } from "../storage/storage.module";
 import { Module } from "@nestjs/common";
 import { UserService } from "./user.service";
 import { UserController } from "./user.controller";
+import { PublicUserService } from "./public-user.service";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { UserEntity } from "./user.entity";
 import { AdminSeeder } from "../../database/seeds/seed-admin";
@@ -16,7 +17,7 @@ import { AccountLifecycleModule } from "../../common/account-lifecycle/account-l
     AccountLifecycleModule,
   ],
   controllers: [UserController],
-  providers: [UserService, AdminSeeder],
+  providers: [UserService, PublicUserService, AdminSeeder],
   exports: [UserService],
 })
 export class UserModule {}
