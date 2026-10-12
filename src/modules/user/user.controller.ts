@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, Param, Patch } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  ParseUUIDPipe,
+  Query,
+} from "@nestjs/common";
+import { PublicUserService } from "./public-user.service";
+import { PublicUserPostsDto } from "./dto/public-user-posts.dto";
+import { Public } from "../../common/decorators/customize.decorator";
 import { UpdateAvatarDto } from "./dto/update-avatar.dto";
 import { UserService } from "./user.service";
 import { ResponseMessage } from "../../common/decorators/customize.decorator";
@@ -18,7 +30,26 @@ export class UserController {
   constructor(
     private readonly userService: UserService,
     private readonly accountLifecycle: AccountLifecycleService,
+    private readonly publicUser: PublicUserService,
   ) {}
+
+  @Get(":id/public")
+  @Public()
+  @ResponseMessage("Public user profile retrieved successfully!")
+  getPublicProfile(@Param("id", new ParseUUIDPipe()) id: string) {
+    return this.publicUser.profile(id);
+  }
+
+  @Get(":id/posts")
+  @Public()
+  @ResponseMessage("Public user posts retrieved successfully!")
+  getPublicPosts(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Query() query: PublicUserPostsDto,
+    @GetAuthorizationContext() ctx: AuthorizationContext,
+  ) {
+    return this.publicUser.posts(id, query, ctx);
+  }
 
   @Get("/me")
   @CheckPolicies({ action: "read", subject: "User" })

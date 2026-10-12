@@ -24,6 +24,7 @@ import type {
 } from "../authorization/authorization.types";
 import { CreatePostDto } from "./dto/create-post.dto";
 import { FindPostsDto } from "./dto/find-posts.dto";
+import { FindMyPostsDto } from "./dto/find-my-posts.dto";
 import { SearchPostsDto } from "./dto/search-posts.dto";
 import { UpdatePostDto } from "./dto/update-post.dto";
 import { PostsService } from "./posts.service";
@@ -61,7 +62,7 @@ export class PostsController {
   @ResponseMessage("My posts retrieved successfully!")
   findMyPosts(
     @GetAuthorizationContext() ctx: AuthenticatedContext,
-    @Query() query: FindPostsDto,
+    @Query() query: FindMyPostsDto,
   ) {
     return this.postsService.findMyPosts(ctx, query);
   }
