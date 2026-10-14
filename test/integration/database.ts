@@ -16,6 +16,7 @@ import { ReportEntity } from "../../src/modules/reports/report.entity";
 import { FavoriteEntity } from "../../src/modules/favorites/favorite.entity";
 import { ReviewEntity } from "../../src/modules/reviews/review.entity";
 import { PasswordResetChallengeEntity } from "../../src/modules/auth/password-reset-challenge.entity";
+import { PostSearchUnaccent1791760000000 } from "../../src/database/migrations/1791760000000-PostSearchUnaccent";
 
 const ownedSchemas = new Set<string>();
 export function testDatabaseEnv(): Record<string, string | undefined> {
@@ -87,6 +88,14 @@ export async function initializeTestDatabase(ds: DataSource): Promise<void> {
   await ds.initialize();
   await ds.query(`CREATE SCHEMA "${schema}"`);
   await ds.synchronize();
+  // Expression indexes/functions are managed by migrations, not synchronize.
+  const runner = ds.createQueryRunner();
+  try {
+    await runner.connect();
+    await new PostSearchUnaccent1791760000000().up(runner);
+  } finally {
+    await runner.release();
+  }
 }
 
 export async function disposeTestDatabase(ds: DataSource): Promise<void> {

@@ -191,6 +191,70 @@ describe("university and locationName API contracts", () => {
     },
   );
 
+  it("searches without Vietnamese accents while preserving the HTTP response contract", async () => {
+    const post = await createTestPost(ds, owner.id, categoryId, {
+      title: "Điện thoại thử nghiệm",
+      description: "Đồ dùng còn mới",
+      locationName: "Thư viện",
+    });
+    for (const q of [
+      "dien thoai thu nghiem",
+      "ĐIỆN THOẠI THỬ NGHIỆM",
+      "do dung con moi",
+    ]) {
+      const response = await http()
+        .get("/api/v1/posts/search")
+        .query({ q, sellerId: owner.id, categoryId })
+        .expect(200);
+      expect(Object.keys(response.body).sort()).toEqual([
+        "data",
+        "message",
+        "statusCode",
+      ]);
+      expect(response.body).toMatchObject({
+        statusCode: 200,
+        message: "Posts found successfully!",
+        data: { meta: { page: 1, limit: 20, total: 1, totalPages: 1 } },
+      });
+      expect(response.body.data.items).toHaveLength(1);
+      expect(response.body.data.items[0]).toMatchObject({
+        id: post.id,
+        title: post.title,
+        description: post.description,
+        locationName: "Thư viện",
+        distance: null,
+      });
+    }
+  });
+
+  it("finds the math book using separated keywords and requires every keyword", async () => {
+    const post = await createTestPost(ds, owner.id, categoryId, {
+      title: "Sách bài tập Toán 3 có lời giải",
+      description: "Dành cho học sinh",
+    });
+    for (const q of ["sach toan 3", "3 TOÁN sách", "  sach   toan 3  "]) {
+      const response = await http()
+        .get("/api/v1/posts/search")
+        .query({ q, sellerId: owner.id, categoryId })
+        .expect(200);
+      expect(
+        response.body.data.items.map((item: { id: string }) => item.id),
+      ).toEqual([post.id]);
+      expect(response.body.data.meta).toMatchObject({
+        total: 1,
+        totalPages: 1,
+      });
+    }
+    for (const q of ["sach toan 9", "sach toann 3"]) {
+      const response = await http()
+        .get("/api/v1/posts/search")
+        .query({ q, sellerId: owner.id, categoryId })
+        .expect(200);
+      expect(response.body.data.items).toEqual([]);
+      expect(response.body.data.meta.total).toBe(0);
+    }
+  });
+
   it("returns locationName in detail/list/search and preserves or clears it on PATCH", async () => {
     const post = await createTestPost(ds, owner.id, categoryId, {
       locationName: "Thư viện",

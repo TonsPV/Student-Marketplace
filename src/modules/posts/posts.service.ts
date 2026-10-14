@@ -181,15 +181,28 @@ export class PostsService {
       .andWhere("post.deleted_at IS NULL");
 
     if (q) {
-      queryBuilder.andWhere(
-        new Brackets((builder) => {
-          builder
-            .where("post.title ILIKE :keyword", { keyword: `%${q}%` })
-            .orWhere("post.description ILIKE :keyword", {
-              keyword: `%${q}%`,
-            });
-        }),
-      );
+      const schema =
+        (this.dataSource.options as { schema?: string }).schema ?? "public";
+      if (!/^[a-z][a-z0-9_]*$/.test(schema))
+        throw new Error("Invalid POSTGRES_SCHEMA");
+      const normalize = `"${schema}".post_search_unaccent`;
+      const keywords = [...new Set(q.trim().split(/\s+/).filter(Boolean))];
+      keywords.forEach((keyword, index) => {
+        const parameter = `keyword${index}`;
+        // Every token must match; each may occur in either field, in any order.
+        queryBuilder.andWhere(
+          new Brackets((builder) => {
+            builder
+              .where(
+                `${normalize}(post.title) ILIKE ${normalize}(:${parameter})`,
+                { [parameter]: `%${keyword}%` },
+              )
+              .orWhere(
+                `${normalize}(post.description) ILIKE ${normalize}(:${parameter})`,
+              );
+          }),
+        );
+      });
     }
 
     if (categoryId) {

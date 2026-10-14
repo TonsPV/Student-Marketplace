@@ -33,6 +33,8 @@ export enum PostStatus {
 @Index("idx_posts_category_id", ["categoryId"])
 @Index("idx_posts_location", ["location"], { spatial: true })
 @Index("idx_posts_created_at", ["createdAt"])
+@Index("idx_posts_title_unaccent_trgm", { synchronize: false })
+@Index("idx_posts_description_unaccent_trgm", { synchronize: false })
 export class PostEntity extends BaseEntity {
   @Column({ name: "seller_id", type: "uuid" })
   sellerId!: string;
