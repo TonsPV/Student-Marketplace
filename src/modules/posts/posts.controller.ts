@@ -27,6 +27,7 @@ import { FindPostsDto } from "./dto/find-posts.dto";
 import { FindMyPostsDto } from "./dto/find-my-posts.dto";
 import { SearchPostsDto } from "./dto/search-posts.dto";
 import { UpdatePostDto } from "./dto/update-post.dto";
+import { MarkPostSoldDto } from "./dto/mark-post-sold.dto";
 import { PostsService } from "./posts.service";
 
 @ApiTags("posts")
@@ -77,16 +78,6 @@ export class PostsController {
     return this.postsService.search(query, ctx);
   }
 
-  @Get(":id")
-  @Public()
-  @ResponseMessage("Post retrieved successfully!")
-  findOne(
-    @Param("id", new ParseUUIDPipe()) id: string,
-    @GetAuthorizationContext() ctx: AuthorizationContext,
-  ) {
-    return this.postsService.findOne(id, ctx);
-  }
-
   @Patch(":id")
   @CheckPolicies({ action: "update", subject: "Post" })
   @ApiBearerAuth("access-token")
@@ -106,9 +97,42 @@ export class PostsController {
   @ResponseMessage("Post marked as sold successfully!")
   markAsSold(
     @Param("id", new ParseUUIDPipe()) id: string,
+    @Body() dto: MarkPostSoldDto,
     @GetAuthorizationContext() ctx: AuthenticatedContext,
   ) {
-    return this.postsService.markAsSold(id, ctx);
+    return this.postsService.markAsSold(id, dto, ctx);
+  }
+
+  @Get("purchased")
+  @CheckPolicies({ action: "read", subject: "Post" })
+  @ApiBearerAuth("access-token")
+  @ResponseMessage("Purchased posts retrieved successfully!")
+  findPurchased(
+    @Query() query: FindPostsDto,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.postsService.findPurchased(query, ctx);
+  }
+
+  @Get(":id/buyers")
+  @CheckPolicies({ action: "read", subject: "Post" })
+  @ApiBearerAuth("access-token")
+  @ResponseMessage("Buyer candidates retrieved successfully!")
+  findBuyerCandidates(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.postsService.findBuyerCandidates(id, ctx);
+  }
+
+  @Get(":id")
+  @Public()
+  @ResponseMessage("Post retrieved successfully!")
+  findOne(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthorizationContext,
+  ) {
+    return this.postsService.findOne(id, ctx);
   }
 
   @Delete(":id")

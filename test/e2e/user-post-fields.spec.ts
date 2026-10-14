@@ -626,11 +626,9 @@ describe("university and locationName API contracts", () => {
       university: "UIT",
       phone: "0912345678",
     });
-    await ds
-      .getRepository(UserEntity)
-      .update(seller.id, {
-        avatarStorageKey: `avatars/${seller.id}/${randomUUID()}.jpg`,
-      });
+    await ds.getRepository(UserEntity).update(seller.id, {
+      avatarStorageKey: `avatars/${seller.id}/${randomUUID()}.jpg`,
+    });
     const active = await createTestPost(ds, seller.id, categoryId, {
       createdAt: new Date("2026-10-12T01:00:00Z"),
     });
@@ -853,27 +851,114 @@ describe("university and locationName API contracts", () => {
 
   it("filters own active/sold/hidden posts before pagination without leaking another seller", async () => {
     const seller = await createTestUser(ds);
-    const entries = await Promise.all([PostStatus.ACTIVE, PostStatus.ACTIVE, PostStatus.SOLD, PostStatus.HIDDEN].map(status => createTestPost(ds, seller.id, categoryId, { status })));
-    const removed = await createTestPost(ds, seller.id, categoryId, { status: PostStatus.HIDDEN });
+    const entries = await Promise.all(
+      [
+        PostStatus.ACTIVE,
+        PostStatus.ACTIVE,
+        PostStatus.SOLD,
+        PostStatus.HIDDEN,
+      ].map((status) => createTestPost(ds, seller.id, categoryId, { status })),
+    );
+    const removed = await createTestPost(ds, seller.id, categoryId, {
+      status: PostStatus.HIDDEN,
+    });
     await ds.getRepository(PostEntity).softDelete(removed.id);
-    await createTestPost(ds, outsider.id, categoryId, { status: PostStatus.HIDDEN });
-    for (const status of [PostStatus.ACTIVE, PostStatus.SOLD, PostStatus.HIDDEN]) {
+    await createTestPost(ds, outsider.id, categoryId, {
+      status: PostStatus.HIDDEN,
+    });
+    for (const status of [
+      PostStatus.ACTIVE,
+      PostStatus.SOLD,
+      PostStatus.HIDDEN,
+    ]) {
       await http().get(`/api/v1/posts/me?status=${status}`).expect(401);
-      const result = (await http().get(`/api/v1/posts/me?status=${status}&limit=1`).set(auth(seller)).expect(200)).body.data;
-      const expected = entries.filter(post => post.status === status);
-      expect(result.meta).toMatchObject({ total: expected.length, totalPages: expected.length });
+      const result = (
+        await http()
+          .get(`/api/v1/posts/me?status=${status}&limit=1`)
+          .set(auth(seller))
+          .expect(200)
+      ).body.data;
+      const expected = entries.filter((post) => post.status === status);
+      expect(result.meta).toMatchObject({
+        total: expected.length,
+        totalPages: expected.length,
+      });
       expect(result.items).toHaveLength(1);
-      expect(result.items[0]).toMatchObject({ sellerId: seller.id, status, deletedAt: null });
+      expect(result.items[0]).toMatchObject({
+        sellerId: seller.id,
+        status,
+        deletedAt: null,
+      });
       if (expected.length > 1) {
-        const second = (await http().get(`/api/v1/posts/me?status=${status}&limit=1&page=2`).set(auth(seller)).expect(200)).body.data;
+        const second = (
+          await http()
+            .get(`/api/v1/posts/me?status=${status}&limit=1&page=2`)
+            .set(auth(seller))
+            .expect(200)
+        ).body.data;
         expect(second.items[0].id).not.toBe(result.items[0].id);
       }
     }
-    const deleted = (await http().get("/api/v1/posts/me?deleted=true&status=hidden").set(auth(seller)).expect(200)).body.data;
-    expect(deleted.items.map((post: PostEntity) => post.id)).toEqual([removed.id]);
-    for (const status of ["invalid", "", "ACTIVE"]) await http().get(`/api/v1/posts/me?status=${status}`).set(auth(seller)).expect(400);
+    const deleted = (
+      await http()
+        .get("/api/v1/posts/me?deleted=true&status=hidden")
+        .set(auth(seller))
+        .expect(200)
+    ).body.data;
+    expect(deleted.items.map((post: PostEntity) => post.id)).toEqual([
+      removed.id,
+    ]);
+    for (const status of ["invalid", "", "ACTIVE"])
+      await http()
+        .get(`/api/v1/posts/me?status=${status}`)
+        .set(auth(seller))
+        .expect(400);
     await http().get("/api/v1/posts?status=hidden").expect(400);
-    await http().get(`/api/v1/user/${seller.id}/posts?status=hidden`).expect(400);
+    await http()
+      .get(`/api/v1/user/${seller.id}/posts?status=hidden`)
+      .expect(400);
+  });
+
+  it("does not expose seller or post internal fields in purchased posts", async () => {
+    const buyer = await createTestUser(ds);
+    const seller = await createTestUser(ds, {
+      avatarUrl: "https://images.example.test/avatar.jpg",
+    });
+    const purchased = await createTestPost(ds, seller.id, categoryId, {
+      status: PostStatus.SOLD,
+      buyerId: buyer.id,
+      soldAt: new Date(),
+    });
+
+    const response = await http()
+      .get("/api/v1/posts/purchased")
+      .set(auth(buyer))
+      .expect(200);
+    const item = response.body.data.items.find(
+      (entry: { id: string }) => entry.id === purchased.id,
+    );
+
+    expect(item).toBeDefined();
+    expect(item).toMatchObject({
+      id: purchased.id,
+      soldAt: expect.any(String),
+      reviewDeadline: expect.any(String),
+      canReview: true,
+      reviewStatus: "NOT_REVIEWED",
+      review: null,
+      seller: {
+        id: seller.id,
+        fullName: seller.fullName,
+        avatarUrl: seller.avatarUrl,
+      },
+    });
+    expect(item.seller).not.toHaveProperty("password");
+    expect(item.seller).not.toHaveProperty("avatarStorageKey");
+    expect(item.seller).not.toHaveProperty("deletedAt");
+    expect(item.seller).not.toHaveProperty("isAdmin");
+    expect(item.seller).not.toHaveProperty("isLocked");
+    expect(item).not.toHaveProperty("deletedAt");
+    expect(item).not.toHaveProperty("buyerId");
   });
 
   it("documents nullable optional strings on registration, profile and post DTOs", () => {

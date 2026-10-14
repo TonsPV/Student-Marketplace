@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  DeleteDateColumn,
   JoinColumn,
   ManyToOne,
   UpdateDateColumn,
@@ -12,7 +13,7 @@ import { PostEntity } from "../posts/post.entity";
 import { UserEntity } from "../user/user.entity";
 
 @Entity("reviews")
-@Index("uq_reviews_reviewer_post", ["reviewerId", "postId"], {
+@Index("uq_reviews_post_id", ["postId"], {
   unique: true,
 })
 @Index("idx_reviews_post_created_at", ["postId", "createdAt"])
@@ -42,4 +43,7 @@ export class ReviewEntity extends BaseEntity {
 
   @UpdateDateColumn({ name: "updated_at" })
   updatedAt!: Date;
+
+  @DeleteDateColumn({ name: "deleted_at", type: "timestamptz", nullable: true })
+  deletedAt!: Date | null;
 }
