@@ -2,6 +2,7 @@ import {
   BadRequestException,
   InternalServerErrorException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
 } from "@nestjs/common";
@@ -47,6 +48,8 @@ import { sellerStatistics } from "../reviews/seller-statistics";
 
 @Injectable()
 export class PostsService {
+  private readonly logger = new Logger(PostsService.name);
+
   constructor(
     @InjectRepository(PostEntity)
     private readonly postsRepository: Repository<PostEntity>,
@@ -528,14 +531,21 @@ export class PostsService {
       return this.toResponse(saved);
     });
     if (notificationBuyerId) {
-      this.realtime?.emitToUser(
-        notificationBuyerId,
-        WS_EVENTS.NOTIFICATION_NEW,
-        {
-          type: NotificationType.REVIEW_REQUEST,
-          refId: id,
-        },
-      );
+      try {
+        this.realtime?.emitToUser(
+          notificationBuyerId,
+          WS_EVENTS.NOTIFICATION_NEW,
+          {
+            type: NotificationType.REVIEW_REQUEST,
+            refId: id,
+          },
+        );
+      } catch (err) {
+        // The sale has committed; socket failure must not fail the HTTP request.
+        this.logger.error(
+          `emit review notification:new failed: ${err instanceof Error ? err.message : err}`,
+        );
+      }
     }
     return result;
   }
