@@ -15,8 +15,6 @@ import {
   Not,
   Repository,
 } from "typeorm";
-import { sellerStatistics } from "../reviews/seller-statistics";
-import { ReviewEntity } from "../reviews/review.entity";
 
 import { createPaginationMeta } from "../../common/utils/pagination.util";
 import { CategoryEntity } from "../categories/category.entity";
@@ -36,6 +34,7 @@ import { resolveAvatar } from "../storage/avatar-response";
 import { toPostProjection } from "../authorization/subject-projections";
 import { ConversationEntity } from "../conversations/entities/conversation.entity";
 import { MessageEntity } from "../messages/entities/message.entity";
+import { ReviewEntity } from "../reviews/review.entity";
 import {
   NotificationEntity,
   NotificationType,
@@ -44,6 +43,7 @@ import { RealtimeService } from "../realtime/realtime.service";
 import { WS_EVENTS } from "../realtime/realtime.events";
 import { MarkPostSoldDto } from "./dto/mark-post-sold.dto";
 import { PurchaseReviewStatus } from "./dto/purchased-post-response.dto";
+import { sellerStatistics } from "../reviews/seller-statistics";
 
 @Injectable()
 export class PostsService {
@@ -513,15 +513,16 @@ export class PostsService {
           refId: saved.id,
         });
         if (!existingNotification) {
-          const notification = notificationRepository.create({
-            userId: notificationBuyerId,
-            type: NotificationType.REVIEW_REQUEST,
-            refId: saved.id,
-            title: "Review your purchase",
-            body: "You can review this purchase within 30 days.",
-            isRead: false,
-          });
-          await notificationRepository.save(notification);
+          await notificationRepository.save(
+            notificationRepository.create({
+              userId: notificationBuyerId,
+              type: NotificationType.REVIEW_REQUEST,
+              refId: saved.id,
+              title: "Review your purchase",
+              body: "You can review this purchase within 30 days.",
+              isRead: false,
+            }),
+          );
         }
       }
       return this.toResponse(saved);
@@ -575,6 +576,41 @@ export class PostsService {
     }));
   }
 
+  private async toPurchasedPostResponse(post: PostEntity) {
+    return {
+      id: post.id,
+      sellerId: post.sellerId,
+      categoryId: post.categoryId,
+      title: post.title,
+      description: post.description,
+      price: post.price,
+      condition: post.condition,
+      status: post.status,
+      location: post.location
+        ? {
+            latitude: post.location.coordinates[1],
+            longitude: post.location.coordinates[0],
+          }
+        : null,
+      locationName: post.locationName,
+      createdAt: post.createdAt,
+      soldAt: post.soldAt,
+      seller: post.seller
+        ? {
+            id: post.seller.id,
+            fullName: post.seller.fullName,
+            ...(await resolveAvatar(this.storage, post.seller)),
+          }
+        : null,
+      category: post.category
+        ? {
+            id: post.category.id,
+            name: post.category.name,
+          }
+        : null,
+    };
+  }
+
   async findPurchased(query: FindPostsDto, context: AuthenticatedContext) {
     const { page, limit } = query;
     const [posts, total] = await this.postsRepository.findAndCount({
@@ -593,16 +629,8 @@ export class PostsService {
         locationName: true,
         createdAt: true,
         soldAt: true,
-        seller: {
-          id: true,
-          fullName: true,
-          avatarUrl: true,
-          avatarStorageKey: true,
-        },
-        category: {
-          id: true,
-          name: true,
-        },
+        seller: { id: true, fullName: true, avatarUrl: true },
+        category: { id: true, name: true },
       },
       order: { soldAt: "DESC" },
       skip: (page - 1) * limit,
@@ -642,42 +670,6 @@ export class PostsService {
       }),
     );
     return { items, meta: createPaginationMeta(query, total) };
-  }
-
-  private async toPurchasedPostResponse(post: PostEntity) {
-    const seller = post.seller
-      ? {
-          id: post.seller.id,
-          fullName: post.seller.fullName,
-          ...(await resolveAvatar(this.storage, post.seller)),
-        }
-      : null;
-    return {
-      id: post.id,
-      sellerId: post.sellerId,
-      categoryId: post.categoryId,
-      title: post.title,
-      description: post.description,
-      price: post.price,
-      condition: post.condition,
-      status: post.status,
-      location: post.location
-        ? {
-            latitude: post.location.coordinates[1],
-            longitude: post.location.coordinates[0],
-          }
-        : null,
-      locationName: post.locationName,
-      createdAt: post.createdAt,
-      soldAt: post.soldAt,
-      seller,
-      category: post.category
-        ? {
-            id: post.category.id,
-            name: post.category.name,
-          }
-        : null,
-    };
   }
 
   async remove(id: string, context: AuthenticatedContext) {
