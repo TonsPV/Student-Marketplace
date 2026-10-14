@@ -82,6 +82,11 @@ describe("reviews migration", () => {
       expect(
         table?.foreignKeys.every((key) => key.onDelete === "RESTRICT"),
       ).toBe(true);
+      // The lifecycle migration adds this column after the base reviews table.
+      // Keep this test focused on the base migration while matching ReviewEntity.
+      await runner.query(
+        `ALTER TABLE "${schema}"."reviews" ADD COLUMN "deleted_at" timestamptz`,
+      );
       const repo = ds.getRepository(ReviewEntity);
       const review = await repo.save(
         repo.create({

@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  InternalServerErrorException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import {
@@ -14,6 +16,7 @@ import {
   Repository,
 } from "typeorm";
 import { sellerStatistics } from "../reviews/seller-statistics";
+import { ReviewEntity } from "../reviews/review.entity";
 
 import { createPaginationMeta } from "../../common/utils/pagination.util";
 import { CategoryEntity } from "../categories/category.entity";
@@ -31,6 +34,16 @@ import type {
 import { StorageService } from "../storage/storage.service";
 import { resolveAvatar } from "../storage/avatar-response";
 import { toPostProjection } from "../authorization/subject-projections";
+import { ConversationEntity } from "../conversations/entities/conversation.entity";
+import { MessageEntity } from "../messages/entities/message.entity";
+import {
+  NotificationEntity,
+  NotificationType,
+} from "../notifications/notification.entity";
+import { RealtimeService } from "../realtime/realtime.service";
+import { WS_EVENTS } from "../realtime/realtime.events";
+import { MarkPostSoldDto } from "./dto/mark-post-sold.dto";
+import { PurchaseReviewStatus } from "./dto/purchased-post-response.dto";
 
 @Injectable()
 export class PostsService {
@@ -42,6 +55,17 @@ export class PostsService {
     private readonly authorization: AuthorizationService,
     private readonly dataSource: DataSource,
     private readonly storage: StorageService,
+    @InjectRepository(ConversationEntity)
+    @Optional()
+    private readonly conversationsRepository?: Repository<ConversationEntity>,
+    @InjectRepository(MessageEntity)
+    @Optional()
+    private readonly messagesRepository?: Repository<MessageEntity>,
+    @InjectRepository(ReviewEntity)
+    @Optional()
+    private readonly reviewsRepository?: Repository<ReviewEntity>,
+    @Optional()
+    private readonly realtime?: RealtimeService,
   ) {}
 
   async create(dto: CreatePostDto, context: AuthenticatedContext) {
@@ -404,8 +428,23 @@ export class PostsService {
     });
   }
 
-  async markAsSold(id: string, context: AuthenticatedContext) {
-    return this.dataSource.transaction(async (manager) => {
+  async markAsSold(
+    id: string,
+    dtoOrContext: MarkPostSoldDto | AuthenticatedContext,
+    maybeContext?: AuthenticatedContext,
+  ) {
+    if (
+      maybeContext &&
+      !Object.prototype.hasOwnProperty.call(dtoOrContext, "buyerId")
+    ) {
+      throw new BadRequestException("buyerId must be provided and may be null");
+    }
+    const dto = maybeContext
+      ? ((dtoOrContext as MarkPostSoldDto | undefined) ?? { buyerId: null })
+      : { buyerId: null };
+    const context = maybeContext ?? (dtoOrContext as AuthenticatedContext);
+    let notificationBuyerId: string | null = null;
+    const result = await this.dataSource.transaction(async (manager) => {
       const post = await manager
         .getRepository(PostEntity)
         .createQueryBuilder("post")
@@ -427,11 +466,218 @@ export class PostsService {
       if (post.status === PostStatus.HIDDEN) {
         throw new BadRequestException("Hidden posts cannot be marked as sold");
       }
+      if (post.status === PostStatus.SOLD) {
+        if (post.buyerId !== dto.buyerId) {
+          throw new BadRequestException(
+            "The post has already been sold to another buyer",
+          );
+        }
+        return this.toResponse(post);
+      }
+      if (dto.buyerId !== null) {
+        if (dto.buyerId === post.sellerId) {
+          throw new BadRequestException("Buyer must be different from seller");
+        }
+        const candidate = await manager
+          .getRepository(ConversationEntity)
+          .createQueryBuilder("conversation")
+          .innerJoin(
+            MessageEntity,
+            "message",
+            "message.conversation_id = conversation.id AND message.sender_id = :buyerId",
+            { buyerId: dto.buyerId },
+          )
+          .where("conversation.post_id = :postId", { postId: id })
+          .andWhere("conversation.seller_id = :sellerId", {
+            sellerId: post.sellerId,
+          })
+          .andWhere("conversation.buyer_id = :buyerId", {
+            buyerId: dto.buyerId,
+          })
+          .getOne();
+        if (!candidate) {
+          throw new BadRequestException("Buyer has not contacted this post");
+        }
+        notificationBuyerId = dto.buyerId;
+      }
       post.status = PostStatus.SOLD;
-      return this.toResponse(
-        await manager.getRepository(PostEntity).save(post),
-      );
+      post.buyerId = dto.buyerId;
+      post.soldAt = new Date();
+      const saved = await manager.getRepository(PostEntity).save(post);
+      if (notificationBuyerId) {
+        const notificationRepository =
+          manager.getRepository(NotificationEntity);
+        const existingNotification = await notificationRepository.findOneBy({
+          userId: notificationBuyerId,
+          type: NotificationType.REVIEW_REQUEST,
+          refId: saved.id,
+        });
+        if (!existingNotification) {
+          const notification = notificationRepository.create({
+            userId: notificationBuyerId,
+            type: NotificationType.REVIEW_REQUEST,
+            refId: saved.id,
+            title: "Review your purchase",
+            body: "You can review this purchase within 30 days.",
+            isRead: false,
+          });
+          await notificationRepository.save(notification);
+        }
+      }
+      return this.toResponse(saved);
     });
+    if (notificationBuyerId) {
+      this.realtime?.emitToUser(
+        notificationBuyerId,
+        WS_EVENTS.NOTIFICATION_NEW,
+        {
+          type: NotificationType.REVIEW_REQUEST,
+          refId: id,
+        },
+      );
+    }
+    return result;
+  }
+
+  async findBuyerCandidates(id: string, context: AuthenticatedContext) {
+    const post = await this.getPostForAction(id, context, "markSold");
+    const candidates = await (
+      this.conversationsRepository ??
+      this.dataSource.getRepository(ConversationEntity)
+    )
+      .createQueryBuilder("conversation")
+      .innerJoin("conversation.buyer", "buyer")
+      .innerJoin(
+        MessageEntity,
+        "message",
+        "message.conversation_id = conversation.id AND message.sender_id = conversation.buyer_id",
+      )
+      .where("conversation.post_id = :postId", { postId: id })
+      .andWhere("conversation.seller_id = :sellerId", {
+        sellerId: post.sellerId,
+      })
+      .andWhere("conversation.buyer_id <> :sellerId", {
+        sellerId: post.sellerId,
+      })
+      .select("buyer.id", "id")
+      .addSelect("buyer.full_name", "fullName")
+      .addSelect("buyer.avatar_url", "avatarUrl")
+      .distinct(true)
+      .getRawMany<{
+        id: string;
+        fullName: string;
+        avatarUrl: string | null;
+      }>();
+    return candidates.map((candidate) => ({
+      id: candidate.id,
+      fullName: candidate.fullName,
+      avatarUrl: candidate.avatarUrl,
+    }));
+  }
+
+  async findPurchased(query: FindPostsDto, context: AuthenticatedContext) {
+    const { page, limit } = query;
+    const [posts, total] = await this.postsRepository.findAndCount({
+      where: { buyerId: context.principal.id, status: PostStatus.SOLD },
+      relations: { seller: true, category: true },
+      select: {
+        id: true,
+        sellerId: true,
+        categoryId: true,
+        title: true,
+        description: true,
+        price: true,
+        condition: true,
+        status: true,
+        location: true,
+        locationName: true,
+        createdAt: true,
+        soldAt: true,
+        seller: {
+          id: true,
+          fullName: true,
+          avatarUrl: true,
+          avatarStorageKey: true,
+        },
+        category: {
+          id: true,
+          name: true,
+        },
+      },
+      order: { soldAt: "DESC" },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+    const items = await Promise.all(
+      posts.map(async (post) => {
+        const review = await (
+          this.reviewsRepository ?? this.dataSource.getRepository(ReviewEntity)
+        ).findOneBy({ postId: post.id });
+        if (!post.soldAt) {
+          throw new InternalServerErrorException("Sold post is missing soldAt");
+        }
+        const reviewDeadline = new Date(
+          post.soldAt.getTime() + 30 * 24 * 60 * 60 * 1000,
+        );
+        const canReview = !review && new Date() <= reviewDeadline;
+        return {
+          ...(await this.toPurchasedPostResponse(post)),
+          reviewDeadline,
+          review: review
+            ? {
+                id: review.id,
+                rating: review.rating,
+                comment: review.comment,
+                createdAt: review.createdAt,
+                updatedAt: review.updatedAt,
+              }
+            : null,
+          canReview,
+          reviewStatus: review
+            ? PurchaseReviewStatus.REVIEWED
+            : canReview
+              ? PurchaseReviewStatus.NOT_REVIEWED
+              : PurchaseReviewStatus.EXPIRED,
+        };
+      }),
+    );
+    return { items, meta: createPaginationMeta(query, total) };
+  }
+
+  private async toPurchasedPostResponse(post: PostEntity) {
+    const seller = post.seller
+      ? {
+          id: post.seller.id,
+          fullName: post.seller.fullName,
+          ...(await resolveAvatar(this.storage, post.seller)),
+        }
+      : null;
+    return {
+      id: post.id,
+      sellerId: post.sellerId,
+      categoryId: post.categoryId,
+      title: post.title,
+      description: post.description,
+      price: post.price,
+      condition: post.condition,
+      status: post.status,
+      location: post.location
+        ? {
+            latitude: post.location.coordinates[1],
+            longitude: post.location.coordinates[0],
+          }
+        : null,
+      locationName: post.locationName,
+      createdAt: post.createdAt,
+      soldAt: post.soldAt,
+      seller,
+      category: post.category
+        ? {
+            id: post.category.id,
+            name: post.category.name,
+          }
+        : null,
+    };
   }
 
   async remove(id: string, context: AuthenticatedContext) {

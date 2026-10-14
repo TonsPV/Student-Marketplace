@@ -8,7 +8,7 @@ import {
 import { InjectRepository } from "@nestjs/typeorm";
 import { QueryFailedError, Repository } from "typeorm";
 import { createPaginationMeta } from "../../common/utils/pagination.util";
-import { PostEntity } from "../posts/post.entity";
+import { PostEntity, PostStatus } from "../posts/post.entity";
 import { UserEntity } from "../user/user.entity";
 import { CreateReviewDto } from "./dto/create-review.dto";
 import { FindReviewsDto } from "./dto/find-reviews.dto";
@@ -41,6 +41,20 @@ export class ReviewsService {
       throw new NotFoundException("Post not found");
     }
 
+    if (
+      post.status !== PostStatus.SOLD ||
+      post.buyerId !== context.principal.id
+    ) {
+      throw new ForbiddenException(
+        "Only the confirmed buyer can review a sold post",
+      );
+    }
+    if (
+      !post.soldAt ||
+      Date.now() > post.soldAt.getTime() + 30 * 24 * 60 * 60 * 1000
+    ) {
+      throw new ForbiddenException("The review period has expired");
+    }
     if (post.sellerId === context.principal.id) {
       throw new ForbiddenException("You cannot review your own post");
     }
@@ -67,7 +81,9 @@ export class ReviewsService {
 
       if (
         driverError?.code === PG_UNIQUE_VIOLATION &&
-        driverError.constraint === "uq_reviews_reviewer_post"
+        ["uq_reviews_post_id", "uq_reviews_reviewer_post"].includes(
+          driverError.constraint ?? "",
+        )
       ) {
         throw new ConflictException("You have already reviewed this post");
       }
@@ -223,6 +239,6 @@ export class ReviewsService {
         postId: review.postId,
       }) as unknown as Record<string, unknown>,
     );
-    await this.reviewsRepository.remove(review);
+    await this.reviewsRepository.softRemove(review);
   }
 }
