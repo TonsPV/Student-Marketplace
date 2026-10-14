@@ -235,6 +235,9 @@ export class NotificationsService {
         { id: owned.id, userId, isRead: false },
         { isRead: true },
       );
+      if ((updated.affected ?? 0) > 0) {
+        this.emitReviewRead(userId, owned.refId);
+      }
       return { updated: updated.affected ?? 0, snapshots: [] };
     }
 
@@ -317,7 +320,6 @@ export class NotificationsService {
       [userId],
     )) as Array<{ ref_id: string }>;
     const conversationIds = targets.map((t) => t.ref_id);
-    if (conversationIds.length === 0) return { updated: 0, snapshots: [] };
 
     const result = await this.dataSource.transaction(async (manager) => {
       let updated = 0;
@@ -372,7 +374,20 @@ export class NotificationsService {
             convSnapshots.push({ userId, snapshot: convSnapshot });
         }
       }
-      return { updated, snapshots, convSnapshots };
+      // Review invitations do not have conversation versions or message watermarks.
+      const reviews = await manager
+        .getRepository(NotificationEntity)
+        .update(
+          { userId, type: NotificationType.REVIEW_REQUEST, isRead: false },
+          { isRead: true },
+        );
+      const reviewsUpdated = reviews.affected ?? 0;
+      return {
+        updated: updated + reviewsUpdated,
+        snapshots,
+        convSnapshots,
+        reviewsUpdated,
+      };
     });
 
     for (let i = 0; i < result.snapshots.length; i++) {
@@ -382,6 +397,7 @@ export class NotificationsService {
         | undefined;
       if (conv) this.emitNotificationRead(userId, snapshot, conv);
     }
+    if (result.reviewsUpdated > 0) this.emitReviewRead(userId, null);
     return { updated: result.updated, snapshots: result.snapshots };
   }
 
@@ -464,6 +480,20 @@ export class NotificationsService {
   }
 
   // ── Emit helpers ───────────────────────────────────────────────────────────
+
+  /** Invalidation event: clients reload notification list/count via REST. */
+  private emitReviewRead(userId: string, refId: string | null): void {
+    try {
+      this.realtime.emitToUser(userId, WS_EVENTS.NOTIFICATION_CHANGED, {
+        type: NotificationType.REVIEW_REQUEST,
+        refId,
+      });
+    } catch (err) {
+      this.logger.error(
+        `emit review notification:changed failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
+  }
 
   private emitNotificationRead(
     userId: string,
