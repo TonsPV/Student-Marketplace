@@ -97,10 +97,26 @@ export class PostEntity extends BaseEntity {
   @OneToMany(() => PostImageEntity, (image) => image.post)
   images!: PostImageEntity[];
 
-  @CreateDateColumn({ name: "created_at" })
+  /**
+   * Người mua đã xác nhận trên nền tảng. NULL nếu chưa bán hoặc bán ngoài app.
+   * Không dùng buyer_id IS NULL làm dấu hiệu duy nhất để kết luận chưa bán;
+   * phải kiểm tra status = 'sold'.
+   */
+  @Column({ name: "buyer_id", type: "uuid", nullable: true })
+  buyerId!: string | null;
+
+  @ManyToOne(() => UserEntity, { nullable: true, onDelete: "RESTRICT" })
+  @JoinColumn({ name: "buyer_id" })
+  buyer!: UserEntity | null;
+
+  /** Thời điểm xác nhận bán. NULL nếu chưa bán. Lưu dạng timestamptz. */
+  @Column({ name: "sold_at", type: "timestamptz", nullable: true })
+  soldAt!: Date | null;
+
+  @CreateDateColumn({ name: "created_at", type: "timestamptz" })
   createdAt!: Date;
 
-  @UpdateDateColumn({ name: "updated_at" })
+  @UpdateDateColumn({ name: "updated_at", type: "timestamptz" })
   updatedAt!: Date;
 
   @DeleteDateColumn({ name: "deleted_at" })

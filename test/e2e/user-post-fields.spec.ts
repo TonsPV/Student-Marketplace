@@ -226,7 +226,9 @@ describe("university and locationName API contracts", () => {
         ).locationName,
       ).toBe("Cổng chính");
       expect(
-        response.body.data.items.find((item: { id: string }) => item.id === post.id).location,
+        response.body.data.items.find(
+          (item: { id: string }) => item.id === post.id,
+        ).location,
       ).toEqual({ latitude: 10.77, longitude: 106.7 });
     }
     expect(
@@ -242,20 +244,46 @@ describe("university and locationName API contracts", () => {
 
   it("creates and updates named coordinates while DB keeps GeoJSON; null clears location", async () => {
     const location = { latitude: 10.77, longitude: 106.7 };
-    const created = await http().post("/api/v1/posts").set(auth(owner))
-      .send({ ...body(), location }).expect(201);
+    const created = await http()
+      .post("/api/v1/posts")
+      .set(auth(owner))
+      .send({ ...body(), location })
+      .expect(201);
     const id = created.body.data.id;
     expect(created.body.data.location).toEqual(location);
-    expect((await ds.getRepository(PostEntity).findOneByOrFail({ id })).location?.coordinates).toEqual([106.7, 10.77]);
+    expect(
+      (await ds.getRepository(PostEntity).findOneByOrFail({ id })).location
+        ?.coordinates,
+    ).toEqual([106.7, 10.77]);
     const next = { latitude: 0, longitude: 0 };
-    expect((await patchPost(id, { location: next }).expect(200)).body.data.location).toEqual(next);
-    expect((await patchPost(id, { title: "Giữ nguyên vị trí" }).expect(200)).body.data.location).toEqual(next);
-    for (const invalid of [{ latitude: 91, longitude: 106 }, { latitude: 10, longitude: 181 }, { latitude: "10", longitude: 106 }, { latitude: 10 }, { type: "Point", coordinates: [106, 10] }, { ...next, extra: true }]) {
+    expect(
+      (await patchPost(id, { location: next }).expect(200)).body.data.location,
+    ).toEqual(next);
+    expect(
+      (await patchPost(id, { title: "Giữ nguyên vị trí" }).expect(200)).body
+        .data.location,
+    ).toEqual(next);
+    for (const invalid of [
+      { latitude: 91, longitude: 106 },
+      { latitude: 10, longitude: 181 },
+      { latitude: "10", longitude: 106 },
+      { latitude: 10 },
+      { type: "Point", coordinates: [106, 10] },
+      { ...next, extra: true },
+    ]) {
       await patchPost(id, { location: invalid }).expect(400);
-      await http().post("/api/v1/posts").set(auth(owner)).send({ ...body(), location: invalid }).expect(400);
+      await http()
+        .post("/api/v1/posts")
+        .set(auth(owner))
+        .send({ ...body(), location: invalid })
+        .expect(400);
     }
-    expect((await patchPost(id, { location: null }).expect(200)).body.data.location).toBeNull();
-    expect((await ds.getRepository(PostEntity).findOneByOrFail({ id })).location).toBeNull();
+    expect(
+      (await patchPost(id, { location: null }).expect(200)).body.data.location,
+    ).toBeNull();
+    expect(
+      (await ds.getRepository(PostEntity).findOneByOrFail({ id })).location,
+    ).toBeNull();
   });
 
   it("accepts the length boundaries after trimming", async () => {
@@ -408,44 +436,167 @@ describe("university and locationName API contracts", () => {
   });
 
   it("serves sold detail/images, real seller aggregates, and filters related posts before pagination", async () => {
-    const seller = await createTestUser(ds, { university: "ĐH Công Nghệ Thông Tin", phone: "0912345678" });
-    const active = await createTestPost(ds, seller.id, categoryId, { location: { type: "Point", coordinates: [106.8, 10.8] }, locationName: "KTX Khu B" });
+    const seller = await createTestUser(ds, {
+      university: "ĐH Công Nghệ Thông Tin",
+      phone: "0912345678",
+    });
+    const active = await createTestPost(ds, seller.id, categoryId, {
+      location: { type: "Point", coordinates: [106.8, 10.8] },
+      locationName: "KTX Khu B",
+    });
     const related = await createTestPost(ds, seller.id, categoryId);
-    const sold = await createTestPost(ds, seller.id, categoryId, { status: PostStatus.SOLD });
-    const hidden = await createTestPost(ds, seller.id, categoryId, { status: PostStatus.HIDDEN });
-    const deleted = await createTestPost(ds, seller.id, categoryId, { status: PostStatus.SOLD });
+    const sold = await createTestPost(ds, seller.id, categoryId, {
+      status: PostStatus.SOLD,
+    });
+    const hidden = await createTestPost(ds, seller.id, categoryId, {
+      status: PostStatus.HIDDEN,
+    });
+    const deleted = await createTestPost(ds, seller.id, categoryId, {
+      status: PostStatus.SOLD,
+    });
     await ds.getRepository(PostEntity).softDelete(deleted.id);
-    for (const [post, rating] of [[active, 4], [sold, 5], [hidden, 3], [deleted, 1]] as const) {
-      await ds.getRepository(ReviewEntity).save({ id: randomUUID(), postId: post.id, reviewerId: outsider.id, rating });
+    for (const [post, rating] of [
+      [active, 4],
+      [sold, 5],
+      [hidden, 3],
+      [deleted, 1],
+    ] as const) {
+      await ds.getRepository(ReviewEntity).save({
+        id: randomUUID(),
+        postId: post.id,
+        reviewerId: outsider.id,
+        rating,
+      });
     }
     const imageIds = [randomUUID(), randomUUID()].sort();
-    for (const id of imageIds) await ds.getRepository(PostImageEntity).save({ id, postId: sold.id, url: `https://images.example.test/${id}.jpg` });
+    for (const id of imageIds)
+      await ds.getRepository(PostImageEntity).save({
+        id,
+        postId: sold.id,
+        url: `https://images.example.test/${id}.jpg`,
+      });
     for (const post of [active, sold]) {
       for (const headers of [{}, auth(outsider)]) {
-        const result = await http().get(`/api/v1/posts/${post.id}`).set(headers).expect(200);
-        expect(result.body.data.seller).toMatchObject({ id: seller.id, university: seller.university, ratingAverage: 4, reviewCount: 3, soldCount: 1 });
+        const result = await http()
+          .get(`/api/v1/posts/${post.id}`)
+          .set(headers)
+          .expect(200);
+        expect(result.body.data.seller).toMatchObject({
+          id: seller.id,
+          university: seller.university,
+          ratingAverage: 4,
+          reviewCount: 3,
+          soldCount: 1,
+        });
         expect(result.body.data.seller.createdAt).toBeTruthy();
-        expect(Object.keys(result.body.data.seller)).not.toEqual(expect.arrayContaining(["email", "phone", "password", "isAdmin", "location", "avatarStorageKey"]));
-        for (const key of ["email", "phone", "password", "isAdmin", "location", "avatarStorageKey"]) expect(result.body.data.seller).not.toHaveProperty(key);
+        expect(Object.keys(result.body.data.seller)).not.toEqual(
+          expect.arrayContaining([
+            "email",
+            "phone",
+            "password",
+            "isAdmin",
+            "location",
+            "avatarStorageKey",
+          ]),
+        );
+        for (const key of [
+          "email",
+          "phone",
+          "password",
+          "isAdmin",
+          "location",
+          "avatarStorageKey",
+        ])
+          expect(result.body.data.seller).not.toHaveProperty(key);
       }
     }
-    const images = await http().get(`/api/v1/posts/${sold.id}/images`).expect(200);
-    expect(images.body.data.map((image: { id: string }) => image.id)).toEqual(imageIds);
-    expect(images.body.data.every((image: object) => !("storageKey" in image))).toBe(true);
+    const images = await http()
+      .get(`/api/v1/posts/${sold.id}/images`)
+      .expect(200);
+    expect(images.body.data.map((image: { id: string }) => image.id)).toEqual(
+      imageIds,
+    );
+    expect(
+      images.body.data.every((image: object) => !("storageKey" in image)),
+    ).toBe(true);
     for (const post of [hidden, deleted]) {
       await http().get(`/api/v1/posts/${post.id}`).expect(404);
       await http().get(`/api/v1/posts/${post.id}/images`).expect(404);
     }
-    await http().post("/api/v1/favorites").set(auth(outsider)).send({ postId: sold.id }).expect(404);
-    await http().post("/api/v1/conversations").set(auth(outsider)).send({ postId: sold.id }).expect(404);
-    const search = await http().get(`/api/v1/posts/search?sellerId=${seller.id}&excludePostId=${active.id}&limit=1`).expect(200);
-    expect(search.body.data.items.map((post: { id: string }) => post.id)).toEqual([related.id]);
+    await http()
+      .post("/api/v1/favorites")
+      .set(auth(outsider))
+      .send({ postId: sold.id })
+      .expect(404);
+    await http()
+      .post("/api/v1/conversations")
+      .set(auth(outsider))
+      .send({ postId: sold.id })
+      .expect(404);
+    const search = await http()
+      .get(
+        `/api/v1/posts/search?sellerId=${seller.id}&excludePostId=${active.id}&limit=1`,
+      )
+      .expect(200);
+    expect(
+      search.body.data.items.map((post: { id: string }) => post.id),
+    ).toEqual([related.id]);
     expect(search.body.data.meta).toMatchObject({ total: 1, totalPages: 1 });
     await http().get("/api/v1/posts/search?sellerId=invalid").expect(400);
     await http().get("/api/v1/posts/search?excludePostId=invalid").expect(400);
-    const fresh = await createTestPost(ds, (await createTestUser(ds)).id, categoryId);
+    const fresh = await createTestPost(
+      ds,
+      (await createTestUser(ds)).id,
+      categoryId,
+    );
     const noReviews = await http().get(`/api/v1/posts/${fresh.id}`).expect(200);
-    expect(noReviews.body.data.seller).toMatchObject({ ratingAverage: null, reviewCount: 0, soldCount: 0 });
+    expect(noReviews.body.data.seller).toMatchObject({
+      ratingAverage: null,
+      reviewCount: 0,
+      soldCount: 0,
+    });
+  });
+
+  it("does not expose seller or post internal fields in purchased posts", async () => {
+    const buyer = await createTestUser(ds);
+    const seller = await createTestUser(ds, {
+      avatarUrl: "https://images.example.test/avatar.jpg",
+    });
+    const purchased = await createTestPost(ds, seller.id, categoryId, {
+      status: PostStatus.SOLD,
+      buyerId: buyer.id,
+      soldAt: new Date(),
+    });
+
+    const response = await http()
+      .get("/api/v1/posts/purchased")
+      .set(auth(buyer))
+      .expect(200);
+    const item = response.body.data.items.find(
+      (entry: { id: string }) => entry.id === purchased.id,
+    );
+
+    expect(item).toBeDefined();
+    expect(item).toMatchObject({
+      id: purchased.id,
+      soldAt: expect.any(String),
+      reviewDeadline: expect.any(String),
+      canReview: true,
+      reviewStatus: "NOT_REVIEWED",
+      review: null,
+      seller: {
+        id: seller.id,
+        fullName: seller.fullName,
+        avatarUrl: seller.avatarUrl,
+      },
+    });
+    expect(item.seller).not.toHaveProperty("password");
+    expect(item.seller).not.toHaveProperty("avatarStorageKey");
+    expect(item.seller).not.toHaveProperty("deletedAt");
+    expect(item.seller).not.toHaveProperty("isAdmin");
+    expect(item.seller).not.toHaveProperty("isLocked");
+    expect(item).not.toHaveProperty("deletedAt");
+    expect(item).not.toHaveProperty("buyerId");
   });
 
   it("documents nullable optional strings on registration, profile and post DTOs", () => {

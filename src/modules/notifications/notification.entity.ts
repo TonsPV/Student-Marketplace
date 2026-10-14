@@ -12,6 +12,7 @@ import { UserEntity } from "../user/user.entity";
 
 export enum NotificationType {
   NEW_MESSAGE = "new_message",
+  REVIEW_REQUEST = "review_request",
 }
 
 // Mỗi (user, conversation) tối đa một NEW_MESSAGE chưa đọc: partial unique
