@@ -640,7 +640,12 @@ export class PostsService {
       posts.map(async (post) => {
         const review = await (
           this.reviewsRepository ?? this.dataSource.getRepository(ReviewEntity)
-        ).findOneBy({ postId: post.id });
+        ).findOne({
+          where: { postId: post.id },
+          // A deleted review still counts as reviewed. The unique post_id
+          // constraint preserves this invariant in the database.
+          withDeleted: true,
+        });
         if (!post.soldAt) {
           throw new InternalServerErrorException("Sold post is missing soldAt");
         }
@@ -651,15 +656,16 @@ export class PostsService {
         return {
           ...(await this.toPurchasedPostResponse(post)),
           reviewDeadline,
-          review: review
-            ? {
-                id: review.id,
-                rating: review.rating,
-                comment: review.comment,
-                createdAt: review.createdAt,
-                updatedAt: review.updatedAt,
-              }
-            : null,
+          review:
+            review && !review.deletedAt
+              ? {
+                  id: review.id,
+                  rating: review.rating,
+                  comment: review.comment,
+                  createdAt: review.createdAt,
+                  updatedAt: review.updatedAt,
+                }
+              : null,
           canReview,
           reviewStatus: review
             ? PurchaseReviewStatus.REVIEWED

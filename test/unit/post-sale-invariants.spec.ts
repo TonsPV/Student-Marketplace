@@ -59,6 +59,7 @@ describe("post sale invariants", () => {
     };
     const reviewRepository = {
       findOneBy: jest.fn().mockResolvedValue(review),
+      findOne: jest.fn().mockResolvedValue(review),
     };
     const notificationRepository = {
       findOneBy: jest.fn().mockResolvedValue(null),
@@ -206,5 +207,56 @@ describe("post sale invariants", () => {
     await expect(
       purchased.findPurchased({ page: 1, limit: 10 }, context),
     ).rejects.toBeInstanceOf(InternalServerErrorException);
+  });
+
+  it("keeps a soft-deleted review marked as reviewed in purchased posts", async () => {
+    const soldAt = new Date();
+    const post = Object.assign(new PostEntity(), {
+      id: POST,
+      sellerId: SELLER,
+      categoryId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      title: "Item",
+      description: "Description",
+      price: "100",
+      status: PostStatus.SOLD,
+      buyerId: BUYER,
+      soldAt,
+      location: null,
+      locationName: null,
+      deletedAt: null,
+      seller: { id: SELLER, fullName: "Seller", avatarUrl: null },
+      category: { id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", name: "Other" },
+    });
+    const deletedReview = Object.assign(new ReviewEntity(), {
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      postId: POST,
+      reviewerId: BUYER,
+      rating: 5,
+      comment: "Deleted",
+      deletedAt: new Date(),
+    });
+    const { service, postsRepository } = createService(
+      post,
+      null,
+      deletedReview,
+    );
+    postsRepository.findAndCount.mockResolvedValue([[post], 1]);
+
+    const buyerContext = authorization.createAuthenticatedContext({
+      id: BUYER,
+      email: "buyer@example.test",
+      fullName: "Buyer",
+      isAdmin: false,
+    });
+    const result = await service.findPurchased(
+      { page: 1, limit: 10 },
+      buyerContext,
+    );
+
+    expect(result.items[0]).toMatchObject({
+      canReview: false,
+      reviewStatus: "REVIEWED",
+      review: null,
+    });
   });
 });
