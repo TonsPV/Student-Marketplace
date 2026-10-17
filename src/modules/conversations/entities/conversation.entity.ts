@@ -75,6 +75,12 @@ export class ConversationEntity extends BaseEntity {
   @Column({ name: "seller_read_sequence", type: "bigint", default: "0" })
   sellerReadSequence!: string;
 
+  @Column({ name: "buyer_deleted_at", type: "timestamptz", nullable: true })
+  buyerDeletedAt!: Date | null;
+
+  @Column({ name: "seller_deleted_at", type: "timestamptz", nullable: true })
+  sellerDeletedAt!: Date | null;
+
   @OneToMany(() => MessageEntity, (msg) => msg.conversation)
   messages!: MessageEntity[];
 

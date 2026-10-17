@@ -40,6 +40,7 @@ export class AuthPrincipalService {
           fullName: true,
           isAdmin: true,
           isLocked: true,
+          location: true,
         },
       });
     } catch (err) {
@@ -53,6 +54,7 @@ export class AuthPrincipalService {
       email: user.email,
       fullName: user.fullName,
       isAdmin: user.isAdmin,
+      hasLocation: !!user.location,
     };
   }
 

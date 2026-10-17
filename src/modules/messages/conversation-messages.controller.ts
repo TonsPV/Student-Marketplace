@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -27,6 +28,19 @@ import {
 @Controller("conversations/:id")
 export class ConversationMessagesController {
   constructor(private readonly messagesService: MessagesService) {}
+
+  @Delete()
+  @CheckPolicies({ action: "delete", subject: "Conversation" })
+  @ApiOperation({
+    summary: "Hide conversation for the current participant only",
+  })
+  @ResponseMessage("Conversation deleted successfully")
+  deleteConversation(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.messagesService.deleteConversation(id, ctx);
+  }
 
   @Get("messages")
   @CheckPolicies({ action: "readMessages", subject: "Conversation" })

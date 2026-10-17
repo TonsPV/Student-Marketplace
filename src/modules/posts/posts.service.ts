@@ -45,6 +45,7 @@ import { WS_EVENTS } from "../realtime/realtime.events";
 import { MarkPostSoldDto } from "./dto/mark-post-sold.dto";
 import { PurchaseReviewStatus } from "./dto/purchased-post-response.dto";
 import { sellerStatistics } from "../reviews/seller-statistics";
+import { PostImageEntity } from "../post-images/post-image.entity";
 
 @Injectable()
 export class PostsService {
@@ -137,9 +138,7 @@ export class PostsService {
     });
 
     return {
-      items: await Promise.all(
-        items.map((post) => this.withSellerAvatar(post)),
-      ),
+      items: await this.withListThumbnails(items),
       meta: createPaginationMeta(query, total),
     };
   }
@@ -204,6 +203,8 @@ export class PostsService {
         "seller.avatarUrl",
         "seller.avatarStorageKey",
       ])
+      .leftJoin("post.category", "category")
+      .addSelect(["category.id", "category.name"])
       .where("post.status = :status", { status: PostStatus.ACTIVE })
       .andWhere("post.deleted_at IS NULL");
 
@@ -272,16 +273,16 @@ export class PostsService {
     const total = await queryBuilder.clone().getCount();
     const { entities, raw } = await queryBuilder
       .orderBy("post.createdAt", "DESC")
+      .addOrderBy("post.id", "DESC")
       .skip((page - 1) * limit)
       .take(limit)
       .getRawAndEntities();
 
-    const items = await Promise.all(
-      entities.map(async (post, index) => ({
-        ...(await this.withSellerAvatar(post)),
-        distance: hasLocationFilter ? Number(raw[index].distance) : null,
-      })),
-    );
+    const cards = await this.withListThumbnails(entities);
+    const items = cards.map((post, index) => ({
+      ...post,
+      distance: hasLocationFilter ? Number(raw[index].distance) : null,
+    }));
 
     return {
       items,
@@ -377,6 +378,48 @@ export class PostsService {
         ...(await resolveAvatar(this.storage, post.seller)),
       },
     };
+  }
+
+  private async withListThumbnails(posts: PostEntity[]) {
+    if (posts.length === 0) return [];
+
+    // Batch only the first image of each authorized, paginated post. Joining
+    // galleries into the paginated query would multiply rows and load unused images.
+    const images = await this.dataSource
+      .getRepository(PostImageEntity)
+      .createQueryBuilder("image")
+      .select(["image.id", "image.postId", "image.url", "image.storageKey"])
+      .distinctOn(["image.postId"])
+      .where("image.postId IN (:...postIds)", {
+        postIds: posts.map((post) => post.id),
+      })
+      .orderBy("image.postId", "ASC")
+      .addOrderBy("image.id", "ASC")
+      .getMany();
+    const covers = new Map(images.map((image) => [image.postId, image]));
+
+    return Promise.all(
+      posts.map(async (post) => {
+        const image = covers.get(post.id);
+        let thumbnailUrl: string | null = image?.url ?? null;
+        let thumbnailUrlExpiresAt: string | undefined;
+        if (image?.storageKey) {
+          try {
+            const signed = await this.storage.presignGet(image.storageKey);
+            thumbnailUrl = signed.url;
+            thumbnailUrlExpiresAt = signed.expiresAt;
+          } catch {
+            // A missing thumbnail must not prevent the entire feed from loading.
+            this.logger.warn(`Could not sign thumbnail for post ${post.id}`);
+          }
+        }
+        return {
+          ...(await this.withSellerAvatar(post)),
+          thumbnailUrl,
+          ...(thumbnailUrlExpiresAt ? { thumbnailUrlExpiresAt } : {}),
+        };
+      }),
+    );
   }
 
   async getActivePost(id: string) {

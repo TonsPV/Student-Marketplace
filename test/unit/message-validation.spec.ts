@@ -151,6 +151,35 @@ describe("SendConversationMessageDto alias (U1)", () => {
 });
 
 describe("GetMessagesQueryDto / MarkReadDto", () => {
+  it("accepts decimal bigint deltas without converting to a JS number", async () => {
+    for (const afterSequence of [
+      "0",
+      "9007199254740993",
+      "9223372036854775807",
+    ]) {
+      const dto = plainToInstance(GetMessagesQueryDto, { afterSequence });
+      expect(await validate(dto)).toEqual([]);
+      expect(dto.afterSequence).toBe(afterSequence);
+    }
+    for (const afterSequence of [
+      null,
+      3,
+      "-1",
+      "",
+      "01",
+      "1e3",
+      "1.5",
+      "1".repeat(20),
+    ]) {
+      expect(
+        (
+          await validate(
+            plainToInstance(GetMessagesQueryDto, { afterSequence }),
+          )
+        ).length,
+      ).toBeGreaterThan(0);
+    }
+  });
   it("limit ngoài 1–100 → 400; before sai UUID/null → 400", async () => {
     const over = plainToInstance(GetMessagesQueryDto, { limit: 101 });
     expect((await validate(over)).length).toBeGreaterThan(0);

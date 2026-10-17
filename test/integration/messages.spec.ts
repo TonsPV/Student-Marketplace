@@ -54,6 +54,89 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
   const state = (id: string) =>
     ds.getRepository(ConversationEntity).findOneByOrFail({ id });
 
+  it("soft-deletes only one participant, preserves history/read state, restores on new send", async () => {
+    const first = await send("original");
+    const id = first.conversationId;
+    const before = await state(id);
+    realtime.emitToUser.mockClear();
+    await expect(
+      messages.deleteConversation(id, context(outsider)),
+    ).rejects.toMatchObject({ status: 403 });
+    const deleted = await messages.deleteConversation(id, context(seller));
+    expect(deleted.deletedAt).toBeTruthy();
+    expect(
+      (await conversations.findAll(context(seller), { page: 1, limit: 30 }))
+        .items,
+    ).toHaveLength(0);
+    expect(
+      (await conversations.findAll(context(buyer), { page: 1, limit: 30 }))
+        .items,
+    ).toHaveLength(1);
+    expect(await messages.getUnreadCount(context(seller))).toEqual({
+      total: 0,
+      conversations: 0,
+    });
+    expect(
+      await ds
+        .getRepository(MessageEntity)
+        .countBy({ conversationId: id, isRead: false }),
+    ).toBe(1);
+    expect((await state(id)).sellerReadSequence).toBe(
+      before.sellerReadSequence,
+    );
+    expect(
+      await ds
+        .getRepository(NotificationEntity)
+        .countBy({ userId: seller.id, refId: id, isRead: false }),
+    ).toBe(0);
+    expect(
+      realtime.emitToUser.mock.calls.every(([userId]) => userId === seller.id),
+    ).toBe(true);
+    const retry = await messages.deleteConversation(id, context(seller));
+    expect(retry.stateVersion).toBe(deleted.stateVersion);
+    expect(retry.deletedAt).toEqual(deleted.deletedAt);
+    expect(
+      (await messages.findMessages(id, context(buyer), { limit: 30 })).items,
+    ).toHaveLength(1);
+    await send("new message");
+    expect(
+      (await conversations.findAll(context(seller), { page: 1, limit: 30 }))
+        .items,
+    ).toHaveLength(1);
+    expect((await state(id)).sellerDeletedAt).toBeNull();
+    expect(
+      (await messages.findMessages(id, context(seller), { limit: 30 })).items,
+    ).toHaveLength(2);
+    await messages.deleteConversation(id, context(buyer));
+    const reopened = await conversations.createConversation(
+      { postId: post.id },
+      context(buyer),
+    );
+    expect(reopened.id).toBe(id);
+    expect(reopened.deletedAt).toBeNull();
+    expect(await ds.getRepository(ConversationEntity).countBy({ id })).toBe(1);
+  });
+
+  it("serializes simultaneous send/delete with no message loss", async () => {
+    const first = await send("before race");
+    const id = first.conversationId;
+    await Promise.all([
+      messages.deleteConversation(id, context(seller)),
+      send("during race"),
+    ]);
+    const final = await state(id);
+    expect(final.lastMessageSequence).toBe("2");
+    expect(BigInt(final.stateVersion)).toBe(3n);
+    expect(
+      await ds.getRepository(MessageEntity).countBy({ conversationId: id }),
+    ).toBe(2);
+    const visible = await conversations.findAll(context(seller), {
+      page: 1,
+      limit: 30,
+    });
+    expect(visible.items.length).toBe(final.sellerDeletedAt ? 0 : 1);
+  });
+
   beforeAll(async () => {
     ds = createTestDataSource();
     await initializeTestDatabase(ds);
@@ -117,6 +200,15 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       results.map((m) => Number(m.sequence)).sort((a, b) => a - b),
     ).toEqual(Array.from({ length: 12 }, (_, i) => i + 1));
     const latest = results.find((m) => m.sequence === "12")!;
+    expect(latest.conversation).toMatchObject({
+      id: latest.conversationId,
+      role: "buyer",
+      counterpart: { id: seller.id },
+      lastMessageId: latest.id,
+      stateVersion: "12",
+    });
+    for (const call of realtime.emitToConversation.mock.calls)
+      expect(call[2]).not.toHaveProperty("conversation");
     expect(await state(latest.conversationId)).toMatchObject({
       lastMessageId: latest.id,
       lastMessageSequence: "12",
@@ -212,6 +304,12 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
       unreadCount: 1,
       readThroughSequence: "2",
       stateVersion: "4",
+      conversation: {
+        id: first.conversationId,
+        role: "seller",
+        unreadCount: 1,
+        stateVersion: "4",
+      },
     });
     realtime.emitToConversation.mockClear();
     realtime.emitToUser.mockClear();
@@ -343,6 +441,19 @@ describe("messages on PostgreSQL: locks, transactions, replay, reads", () => {
     );
     expect(page.items.map((m) => m.id)).toEqual([second.id]);
     expect(page.hasMore).toBe(true);
+    const delta = await messages.findMessages(
+      first.conversationId,
+      context(seller),
+      { limit: 1, afterSequence: first.sequence },
+    );
+    expect(delta.items.map((message) => message.id)).toEqual([second.id]);
+    expect(delta.hasMore).toBe(false);
+    expect(
+      await messages.findMessages(first.conversationId, context(seller), {
+        limit: 1,
+        afterSequence: second.sequence,
+      }),
+    ).toEqual({ items: [], nextCursor: null, hasMore: false });
     const older = await messages.findMessages(
       first.conversationId,
       context(seller),

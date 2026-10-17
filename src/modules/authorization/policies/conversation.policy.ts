@@ -5,6 +5,7 @@ import type {
 } from "../authorization.types";
 
 const PARTICIPANT_ACTIONS = [
+  "delete",
   "read",
   "readMessages",
   "sendMessage",

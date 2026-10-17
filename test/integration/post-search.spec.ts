@@ -7,6 +7,7 @@ import { SearchPostsDto } from "../../src/modules/posts/dto/search-posts.dto";
 import { PostEntity, PostStatus } from "../../src/modules/posts/post.entity";
 import { PostsService } from "../../src/modules/posts/posts.service";
 import { StorageService } from "../../src/modules/storage/storage.service";
+import { PostImageEntity } from "../../src/modules/post-images/post-image.entity";
 import {
   createTestDataSource,
   initializeTestDatabase,
@@ -105,6 +106,43 @@ describe("accent-insensitive post search", () => {
     expect(
       (await search({ q: "sach giao khoa" })).items.map((post) => post.id),
     ).toEqual([descriptionPost.id]);
+  });
+
+  it("returns one cover per post without changing totals, pagination or gallery order", async () => {
+    const images = ds.getRepository(PostImageEntity);
+    const inserted = await images.save([
+      images.create({
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-000000000002",
+        postId: titlePost.id,
+        url: "https://example.test/second.jpg",
+        storageKey: null,
+      }),
+      images.create({
+        id: "bbbbbbbb-bbbb-4bbb-8bbb-000000000001",
+        postId: titlePost.id,
+        url: "https://example.test/first.jpg",
+        storageKey: null,
+      }),
+    ]);
+    try {
+      const first = await search({ q: "dien thoai", limit: 1 });
+      expect(first.items[0]).toMatchObject({
+        id: descriptionPost.id,
+        thumbnailUrl: null,
+      });
+      expect(first.meta).toMatchObject({ total: 2, totalPages: 2 });
+      const second = await search({ q: "dien thoai", limit: 1, page: 2 });
+      expect(second.items[0]).toMatchObject({
+        id: titlePost.id,
+        thumbnailUrl: "https://example.test/first.jpg",
+        category: { id: titlePost.categoryId },
+      });
+      expect(second.items[0]).not.toHaveProperty("images");
+      expect(second.items[0]).not.toHaveProperty("storageKey");
+      expect(second.meta.total).toBe(2);
+    } finally {
+      await images.delete(inserted.map((image) => image.id));
+    }
   });
 
   it("preserves category, seller, exclusion, price and pagination filters", async () => {

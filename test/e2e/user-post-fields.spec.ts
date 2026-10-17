@@ -29,7 +29,7 @@ import {
   testDatabaseEnv,
 } from "../integration/database";
 import {
-  createTestUser,
+  createReadyTestUser as createTestUser,
   createTestCategory,
   createTestPost,
 } from "../integration/fixtures";
@@ -40,6 +40,37 @@ describe("university and locationName API contracts", () => {
     outsider: UserEntity,
     admin: UserEntity,
     categoryId: string;
+
+  it("requires location before business APIs, then accepts the same JWT after saving", async () => {
+    const incomplete = await createTestUser(ds, { location: null });
+    const headers = auth(incomplete);
+    const me = await http().get("/api/v1/user/me").set(headers).expect(200);
+    expect(me.body.data.hasLocation).toBe(false);
+    const blocked = await http()
+      .post("/api/v1/posts")
+      .set(headers)
+      .send(body())
+      .expect(403);
+    expect(blocked.body.code).toBe("LOCATION_REQUIRED");
+    await http().get("/api/v1/conversations").set(headers).expect(403);
+    await http()
+      .post("/api/v1/realtime/socket-ticket")
+      .set(headers)
+      .expect(403);
+    await http()
+      .patch("/api/v1/user/me/location")
+      .set(headers)
+      .send({ latitude: 10.77, longitude: 106.7 })
+      .expect(200);
+    const ready = await http().get("/api/v1/user/me").set(headers).expect(200);
+    expect(ready.body.data.hasLocation).toBe(true);
+    await http().post("/api/v1/posts").set(headers).send(body()).expect(201);
+    await http().get("/api/v1/conversations").set(headers).expect(200);
+    await http()
+      .post("/api/v1/realtime/socket-ticket")
+      .set(headers)
+      .expect(201);
+  });
   const body = () => ({
     categoryId,
     title: "Sách Giải tích 1",
