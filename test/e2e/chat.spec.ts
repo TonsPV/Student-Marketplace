@@ -27,7 +27,7 @@ import {
 import {
   createTestCategory,
   createTestPost,
-  createTestUser,
+  createReadyTestUser as createTestUser,
 } from "../integration/fixtures";
 
 describe("real Nest HTTP / Socket.IO / private R2", () => {
@@ -209,16 +209,30 @@ describe("real Nest HTTP / Socket.IO / private R2", () => {
   });
 
   it("socket ticket authenticates /ws but cannot authenticate REST or mint another ticket", async () => {
-    const issued = await api(buyerJwt).post("realtime/socket-ticket").send({}).expect(201);
+    const issued = await api(buyerJwt)
+      .post("realtime/socket-ticket")
+      .send({})
+      .expect(201);
     const { ticket, expiresAt, sessionExpiresAt } = issued.body.data;
     expect(typeof ticket).toBe("string");
-    expect(new Date(sessionExpiresAt).getTime()).toBeGreaterThan(new Date(expiresAt).getTime());
+    expect(new Date(sessionExpiresAt).getTime()).toBeGreaterThan(
+      new Date(expiresAt).getTime(),
+    );
     await api(ticket).get("conversations").expect(401);
     await api(ticket).post("realtime/socket-ticket").send({}).expect(401);
     const socket = await connect(ticket);
-    expect(await ack(socket, "chat:join", { conversationId })).toEqual({ ok: true });
+    expect(await ack(socket, "chat:join", { conversationId })).toEqual({
+      ok: true,
+    });
     const received = event(socket, "chat:message:new");
-    const sent = await api(sellerJwt).post("messages").send({ conversationId, content: "Ticket-authenticated realtime", clientId: uuidv7() }).expect(201);
+    const sent = await api(sellerJwt)
+      .post("messages")
+      .send({
+        conversationId,
+        content: "Ticket-authenticated realtime",
+        clientId: uuidv7(),
+      })
+      .expect(201);
     expect((await received).id).toBe(sent.body.data.id);
     socket.disconnect();
   });

@@ -34,6 +34,17 @@ export async function createTestUser(
   return repo.save(user);
 }
 
+/** Business-flow fixtures that have already completed location onboarding. */
+export async function createReadyTestUser(
+  ds: DataSource,
+  overrides: Partial<UserEntity> = {},
+): Promise<UserEntity> {
+  return createTestUser(ds, {
+    location: { type: "Point", coordinates: [106.7009, 10.7769] },
+    ...overrides,
+  });
+}
+
 export async function createTestPost(
   ds: DataSource,
   sellerId: string,

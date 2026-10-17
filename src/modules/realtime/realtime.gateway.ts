@@ -1,4 +1,8 @@
-import { Logger, UnauthorizedException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Logger,
+  UnauthorizedException,
+} from "@nestjs/common";
 import {
   OnGatewayConnection,
   OnGatewayDisconnect,
@@ -16,6 +20,7 @@ import type { AuthenticatedPrincipal } from "../authorization/authorization.type
 import { userRoom } from "./realtime.events";
 import { RealtimeService } from "./realtime.service";
 import { SocketTicketService } from "./socket-ticket.service";
+import { assertLocationReady } from "../../common/auth-principal/location-required";
 
 export type AuthSocket = Socket & {
   data: { user?: AuthenticatedPrincipal; presenceRegistered?: boolean };
@@ -66,18 +71,24 @@ export class RealtimeGateway
       try {
         const principal =
           await this.principals.resolveFromVerifiedClaims(claims);
+        assertLocationReady(principal);
         if (settled || !this.sessions.isCurrent(socket.id))
           return finish(new Error("UNAUTHORIZED"));
         socket.data.user = principal;
         finish();
       } catch (error) {
-        if (!(error instanceof UnauthorizedException))
+        if (
+          !(error instanceof UnauthorizedException) &&
+          !(error instanceof ForbiddenException)
+        )
           this.logger.error("WebSocket principal lookup failed");
         finish(
           new Error(
-            error instanceof UnauthorizedException
-              ? "UNAUTHORIZED"
-              : "INTERNAL_ERROR",
+            error instanceof ForbiddenException
+              ? "LOCATION_REQUIRED"
+              : error instanceof UnauthorizedException
+                ? "UNAUTHORIZED"
+                : "INTERNAL_ERROR",
           ),
         );
       }

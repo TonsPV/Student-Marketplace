@@ -51,6 +51,7 @@ export class PoliciesGuard implements CanActivate {
         email: request.user.email,
         fullName: request.user.fullName,
         isAdmin: request.user.isAdmin,
+        hasLocation: request.user.hasLocation,
       });
       request[AUTHORIZATION_CONTEXT_REQUEST_KEY] = ctx;
       return true;
@@ -64,6 +65,7 @@ export class PoliciesGuard implements CanActivate {
       email: request.user.email,
       fullName: request.user.fullName,
       isAdmin: request.user.isAdmin,
+      hasLocation: request.user.hasLocation,
     });
     request[AUTHORIZATION_CONTEXT_REQUEST_KEY] = authCtx;
     for (const req of descriptor.requirements) {

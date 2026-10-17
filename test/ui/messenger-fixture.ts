@@ -18,7 +18,7 @@ import {
   testDatabaseEnv,
 } from "../integration/database";
 import {
-  createTestUser,
+  createReadyTestUser as createTestUser,
   createTestCategory,
   createTestPost,
 } from "../integration/fixtures";

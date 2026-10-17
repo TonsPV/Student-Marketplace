@@ -89,6 +89,81 @@ export class MessagesService {
 
   // ── Public REST API ────────────────────────────────────────────────────────
 
+  async deleteConversation(
+    conversationId: string,
+    context: AuthenticatedContext,
+  ): Promise<ConversationSnapshotDto> {
+    const userId = context.principal.id;
+    const committed = await this.dataSource.transaction(async (manager) => {
+      // Same row lock as send/read: a later send restores visibility; a later
+      // delete hides it. No message, read receipt, or counterpart state changes.
+      const locked = await this.conversationsService.lockForAction(
+        manager,
+        conversationId,
+        context,
+        "delete",
+      );
+      const isBuyer = locked.buyerId === userId;
+      const alreadyDeleted = isBuyer
+        ? locked.buyerDeletedAt
+        : locked.sellerDeletedAt;
+      const notification = await this.notificationsService.findUnread(
+        manager,
+        userId,
+        conversationId,
+      );
+      const stateVersion =
+        !alreadyDeleted || notification
+          ? ConversationsService.nextVersion(String(locked.stateVersion))
+          : String(locked.stateVersion);
+      if (!alreadyDeleted || notification) {
+        await manager.query(
+          `UPDATE conversations
+              SET ${isBuyer ? "buyer_deleted_at" : "seller_deleted_at"} = COALESCE(${isBuyer ? "buyer_deleted_at" : "seller_deleted_at"}, clock_timestamp()),
+                  state_version = $2::bigint
+            WHERE id = $1`,
+          [conversationId, stateVersion],
+        );
+      }
+      const changed = [];
+      if (notification) {
+        const rows = await manager.query(
+          `UPDATE notifications SET is_read = true, conversation_version = $3,
+              updated_at = clock_timestamp() WHERE id = $1 AND user_id = $2
+            RETURNING updated_at`,
+          [notification.id, userId, stateVersion],
+        );
+        changed.push({
+          ...NotificationsService.toResponse(notification),
+          isRead: true,
+          conversationVersion: stateVersion,
+          updatedAt: rows[0].updated_at,
+        });
+      }
+      const snapshot = await this.conversationsService.buildSnapshot(
+        conversationId,
+        userId,
+        manager,
+      );
+      if (!snapshot) throw new NotFoundException("Conversation not found");
+      const notificationSnapshot =
+        await this.notificationsService.buildSnapshot(
+          manager,
+          userId,
+          conversationId,
+          stateVersion,
+          changed,
+        );
+      return { snapshot, notificationSnapshot };
+    });
+    this.emitConversationAndNoti(
+      committed.snapshot,
+      committed.notificationSnapshot,
+      userId,
+    );
+    return committed.snapshot;
+  }
+
   async sendMessage(
     context: AuthenticatedContext,
     dto: SendMessageDto,
@@ -122,6 +197,16 @@ export class MessagesService {
       "readMessages",
     );
 
+    const afterSequence = query.afterSequence ?? null;
+    if (
+      afterSequence !== null &&
+      (typeof afterSequence !== "string" ||
+        !/^(0|[1-9][0-9]{0,18})$/.test(afterSequence) ||
+        BigInt(afterSequence) > 9223372036854775807n)
+    ) {
+      throw new BadRequestException("Invalid afterSequence");
+    }
+
     let beforeSequence: string | null = null;
     if (query.before !== undefined) {
       const rows = (await this.dataSource.query(
@@ -141,9 +226,10 @@ export class MessagesService {
       `SELECT id, sequence FROM messages
         WHERE conversation_id = $1
           AND ($2::bigint IS NULL OR sequence < $2::bigint)
+          AND ($4::bigint IS NULL OR sequence > $4::bigint)
         ORDER BY sequence DESC
         LIMIT $3`,
-      [conversationId, beforeSequence, limit + 1],
+      [conversationId, beforeSequence, limit + 1, afterSequence],
     )) as Array<{ id: string; sequence: string }>;
 
     if (idRows.length === 0) {
@@ -188,6 +274,7 @@ export class MessagesService {
     unreadCount: number;
     readThroughSequence: string;
     stateVersion: string;
+    conversation: ConversationSnapshotDto;
   }> {
     const userId = context.principal.id;
     if (!dto || !isUUID(dto.throughMessageId)) {
@@ -336,7 +423,7 @@ export class MessagesService {
       // đã materialize đúng; ở đây chỉ phát theo vai reader/other.
       this.dispatchReadEvents(userId, committed.otherId, events);
     }
-    return committed.result;
+    return { ...committed.result, conversation: committed.mine };
   }
 
   async getUnreadCount(
@@ -667,7 +754,8 @@ export class MessagesService {
         `UPDATE conversations
             SET last_message_id = $2, last_message = $3, last_message_at = $4,
                 last_message_sender_id = $5, last_message_sequence = $6::bigint,
-                state_version = $7::bigint
+                state_version = $7::bigint,
+                buyer_deleted_at = NULL, seller_deleted_at = NULL
           WHERE id = $1`,
         [
           conversationId,
@@ -758,7 +846,12 @@ export class MessagesService {
     if (!committed.replay && committed.events) {
       this.dispatchSendEvents(senderId, committed.events);
     }
-    return committed.dto;
+    return {
+      ...committed.dto,
+      ...(committed.events
+        ? { conversation: committed.events.senderSnapshot }
+        : {}),
+    };
   }
 
   /** Replay check dưới advisory lock: cùng key/payload → message cũ + URL mới. */

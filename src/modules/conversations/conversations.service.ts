@@ -23,7 +23,13 @@ import { resolveAvatar } from "../storage/avatar-response";
 import { StorageService } from "../storage/storage.service";
 
 export type ConversationParticipantAction =
-  "read" | "readMessages" | "sendMessage" | "markRead" | "join" | "type";
+  | "read"
+  | "readMessages"
+  | "sendMessage"
+  | "markRead"
+  | "join"
+  | "type"
+  | "delete";
 
 @Injectable()
 export class ConversationsService {
@@ -185,7 +191,20 @@ export class ConversationsService {
         post.seller_id,
         manager,
       );
-      await this.lockForAction(manager, conv.id, context, "read");
+      const locked = await this.lockForAction(
+        manager,
+        conv.id,
+        context,
+        "read",
+      );
+      // Explicitly starting the chat from its post reopens it for this buyer.
+      if (locked.buyerDeletedAt) {
+        await manager.query(
+          `UPDATE conversations SET buyer_deleted_at = NULL,
+              state_version = state_version + 1 WHERE id = $1`,
+          [conv.id],
+        );
+      }
       return conv;
     });
     const snapshot = await this.buildSnapshot(created.id, buyerId);
@@ -205,9 +224,12 @@ export class ConversationsService {
         const [convs, total] = await manager
           .getRepository(ConversationEntity)
           .createQueryBuilder("conv")
-          .where("(conv.buyerId = :userId OR conv.sellerId = :userId)", {
-            userId,
-          })
+          .where(
+            "((conv.buyerId = :userId AND conv.buyerDeletedAt IS NULL) OR (conv.sellerId = :userId AND conv.sellerDeletedAt IS NULL))",
+            {
+              userId,
+            },
+          )
           .orderBy("conv.lastMessageAt", "DESC", "NULLS LAST")
           .addOrderBy("conv.createdAt", "DESC")
           .addOrderBy("conv.id", "DESC")
@@ -328,12 +350,15 @@ export class ConversationsService {
     );
     const thumbByPost = new Map(
       await Promise.all(
-        thumbRows.map(async (r): Promise<[string, string | null]> => [
-          r.post_id,
-          r.storage_key
-            ? (await this.storage.presignGet(r.storage_key)).url
-            : r.url,
-        ]),
+        thumbRows.map(async (r) => {
+          const signed = r.storage_key
+            ? await this.storage.presignGet(r.storage_key)
+            : undefined;
+          return [
+            r.post_id,
+            { url: signed?.url ?? r.url, expiresAt: signed?.expiresAt },
+          ] as const;
+        }),
       ),
     );
 
@@ -344,12 +369,17 @@ export class ConversationsService {
       const post = postById.get(conv.postId);
       return {
         id: conv.id,
+        deletedAt:
+          (isBuyer ? conv.buyerDeletedAt : conv.sellerDeletedAt) ?? null,
         post: {
           id: post?.id ?? conv.postId,
           title: post?.title ?? "",
           price: post ? String(post.price) : "0",
           status: post?.status ?? "unknown",
-          thumbnailUrl: thumbByPost.get(conv.postId) ?? null,
+          thumbnailUrl: thumbByPost.get(conv.postId)?.url ?? null,
+          ...(thumbByPost.get(conv.postId)?.expiresAt
+            ? { thumbnailUrlExpiresAt: thumbByPost.get(conv.postId)!.expiresAt }
+            : {}),
         },
         counterpart: {
           id: counterpart?.id ?? counterpartId,
@@ -363,7 +393,9 @@ export class ConversationsService {
         lastMessageSenderId: conv.lastMessageSenderId,
         lastMessageSequence: String(conv.lastMessageSequence),
         stateVersion: String(conv.stateVersion),
-        unreadCount: unreadByConv.get(conv.id) ?? 0,
+        unreadCount: (isBuyer ? conv.buyerDeletedAt : conv.sellerDeletedAt)
+          ? 0
+          : (unreadByConv.get(conv.id) ?? 0),
         buyerReadSequence: String(conv.buyerReadSequence),
         sellerReadSequence: String(conv.sellerReadSequence),
         createdAt: conv.createdAt,
@@ -376,6 +408,7 @@ export class ConversationsService {
   ): ConversationUpdatedPayload {
     return {
       conversationId: snapshot.id,
+      deletedAt: snapshot.deletedAt,
       stateVersion: snapshot.stateVersion,
       lastMessageId: snapshot.lastMessageId,
       lastMessage: snapshot.lastMessage,
@@ -400,7 +433,8 @@ export class ConversationsService {
               COUNT(DISTINCT m.conversation_id)::int AS conversations
          FROM messages m
          JOIN conversations c ON c.id = m.conversation_id
-        WHERE (c.buyer_id = $1 OR c.seller_id = $1)
+        WHERE ((c.buyer_id = $1 AND c.buyer_deleted_at IS NULL)
+            OR (c.seller_id = $1 AND c.seller_deleted_at IS NULL))
           AND m.sender_id <> $1
           AND m.is_read = false`,
       [userId],

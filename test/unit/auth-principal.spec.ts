@@ -56,6 +56,7 @@ describe("DB-current principal and strict verified claims", () => {
       email: "db@example.com",
       fullName: "DB name",
       isAdmin: false,
+      hasLocation: false,
     });
   });
   it.each([null, { id: ID, isLocked: true }])(

@@ -124,4 +124,13 @@ describe("handshake settlement and cleanup", () => {
     expect(registry.get(h.socket.id)).toBeUndefined();
     expect(jest.getTimerCount()).toBe(0);
   });
+  it("incomplete accounts cannot bypass onboarding using an access-JWT handshake", async () => {
+    const h = harness(async () => ({ ...principal, hasLocation: false }));
+    await h.middleware(h.socket, h.next);
+    expect(h.next.mock.calls[0][0].message).toBe("LOCATION_REQUIRED");
+    expect(registry.get(h.socket.id)).toBeUndefined();
+    expect(jest.getTimerCount()).toBe(0);
+    await h.gateway.handleConnection(h.socket);
+    expect(h.realtime.markOnline).not.toHaveBeenCalled();
+  });
 });

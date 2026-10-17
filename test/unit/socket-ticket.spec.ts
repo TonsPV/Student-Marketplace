@@ -61,4 +61,16 @@ describe("isolated socket tickets", () => {
       tickets.issue(jwt.sign({ id }, { expiresIn: "15m" })),
     ).rejects.toThrow("locked");
   });
+  it("requires DB-confirmed location even if token claims say onboarding is complete", async () => {
+    active.mockResolvedValue({
+      id,
+      email: "test@example.com",
+      fullName: "Test",
+      isAdmin: false,
+      hasLocation: false,
+    });
+    await expect(
+      tickets.issue(jwt.sign({ id, hasLocation: true }, { expiresIn: "15m" })),
+    ).rejects.toMatchObject({ response: { code: "LOCATION_REQUIRED" } });
+  });
 });

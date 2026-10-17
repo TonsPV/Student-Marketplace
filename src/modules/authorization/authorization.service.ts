@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { subject, type MongoAbility, type Subject } from "@casl/ability";
 import { CaslAbilityFactory } from "./casl-ability.factory";
+import { assertLocationReady } from "../../common/auth-principal/location-required";
 import type {
   AuthenticatedContext,
   AuthenticatedPrincipal,
@@ -69,6 +70,8 @@ export class AuthorizationService {
     action: ActionFor<NoInfer<S>>,
     subjectName: S,
   ): void {
+    if (context.kind === "authenticated" && subjectName !== "User")
+      assertLocationReady(context.principal);
     const ability = context.ability as unknown as MongoAbility<
       [string, Subject]
     >;
@@ -89,6 +92,8 @@ export class AuthorizationService {
     subjectName: S,
     projection: Record<string, unknown>,
   ): void {
+    if (context.kind === "authenticated" && subjectName !== "User")
+      assertLocationReady(context.principal);
     if (!projection || typeof projection !== "object") {
       throw new InternalServerErrorException("Invalid subject projection");
     }
@@ -123,6 +128,8 @@ export class AuthorizationService {
     subjectName: S,
     candidate: Record<string, unknown>,
   ): void {
+    if (context.kind === "authenticated")
+      assertLocationReady(context.principal);
     const ability = context.ability as unknown as MongoAbility<
       [string, Subject]
     >;

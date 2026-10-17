@@ -8,6 +8,7 @@ export class ConversationPostDto {
   price!: string;
   status!: string;
   thumbnailUrl!: string | null;
+  thumbnailUrlExpiresAt?: string;
 }
 
 export class ConversationCounterpartDto {
@@ -26,6 +27,8 @@ export class ConversationCounterpartDto {
  */
 export class ConversationSnapshotDto {
   id!: string;
+  /** Visibility for the requesting participant only. */
+  deletedAt!: Date | null;
   post!: ConversationPostDto;
   counterpart!: ConversationCounterpartDto;
   role!: ConversationRole;
@@ -44,6 +47,7 @@ export class ConversationSnapshotDto {
 /** Payload event chat:conversation:updated (state tuyệt đối, không delta). */
 export type ConversationUpdatedPayload = {
   conversationId: string;
+  deletedAt: Date | null;
   stateVersion: string;
   lastMessageId: string | null;
   lastMessage: string | null;

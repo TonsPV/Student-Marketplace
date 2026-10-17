@@ -1,3 +1,5 @@
+import type { ConversationSnapshotDto } from "../../conversations/dto/conversation-response.dto";
+
 export class MessageResponseDto {
   id!: string;
   conversationId!: string;
@@ -13,4 +15,6 @@ export class MessageResponseDto {
   createdAt!: Date;
   /** Persist; có cả trong history/replay/event. */
   clientId!: string | null;
+  /** Sender-only REST receipt; never attached to the room's message event. */
+  conversation?: ConversationSnapshotDto;
 }
