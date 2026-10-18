@@ -32,6 +32,7 @@ export type ReportAction = "create" | "read" | "resolve";
 export type ReviewAction = "create" | "read" | "update" | "delete";
 export type FavoriteAction = "create" | "read" | "delete";
 export type ConversationAction =
+  | "delete"
   | "create"
   | "read"
   | "readMessages"
@@ -102,6 +103,7 @@ export const ACTIONS_BY_SUBJECT = {
   Review: ["create", "read", "update", "delete"],
   Favorite: ["create", "read", "delete"],
   Conversation: [
+    "delete",
     "create",
     "read",
     "readMessages",
@@ -119,6 +121,8 @@ export interface AuthenticatedPrincipal {
   email: string;
   fullName: string;
   isAdmin: boolean;
+  /** Resolved from the current DB row, never from JWT/client claims. */
+  hasLocation?: boolean;
 }
 
 export interface AuthenticatedContext {

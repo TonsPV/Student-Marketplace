@@ -3,4 +3,5 @@ export interface UserInterface {
   fullName: string;
   email: string;
   isAdmin: boolean;
+  hasLocation?: boolean;
 }

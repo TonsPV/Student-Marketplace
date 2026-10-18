@@ -9,6 +9,7 @@ import {
   IsUUID,
   Max,
   MaxLength,
+  Matches,
   Min,
   MinLength,
   ValidateIf,
@@ -113,6 +114,15 @@ export class GetMessagesQueryDto {
   @ValidateIf((o) => o.before !== undefined)
   @IsUUID()
   before?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Only messages newer than this sequence (decimal bigint string)",
+  })
+  @ValidateIf((o) => o.afterSequence !== undefined)
+  @IsString()
+  @Matches(/^(0|[1-9][0-9]{0,18})$/)
+  afterSequence?: string;
 }
 
 // ── E4 body: throughMessageId bắt buộc ───────────────────────────────────────

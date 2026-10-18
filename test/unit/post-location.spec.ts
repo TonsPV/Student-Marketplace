@@ -71,6 +71,21 @@ describe("post location API contract", () => {
       } as unknown as Repository<CategoryEntity>,
       authorization,
       {
+        getRepository: () => ({
+          createQueryBuilder: () => {
+            const images: Record<string, jest.Mock> = {};
+            for (const method of [
+              "select",
+              "distinctOn",
+              "where",
+              "orderBy",
+              "addOrderBy",
+            ])
+              images[method] = jest.fn().mockReturnValue(images);
+            images.getMany = jest.fn().mockResolvedValue([]);
+            return images;
+          },
+        }),
         transaction: async (fn: (manager: unknown) => unknown) =>
           fn({ getRepository: () => repo }),
       } as unknown as DataSource,

@@ -116,6 +116,7 @@ export class UserService {
     return {
       ...(await this.toProfile(user)),
       isAdmin: user.isAdmin,
+      hasLocation: !!user.location,
       location: user.location
         ? {
             latitude: user.location.coordinates[1],

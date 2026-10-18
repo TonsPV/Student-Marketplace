@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import { createHmac } from "node:crypto";
+import { assertLocationReady } from "../../common/auth-principal/location-required";
 import {
   AuthPrincipalService,
   VerifiedClaims,
@@ -30,7 +31,7 @@ export class SocketTicketService {
   async issue(accessToken: string) {
     const claims = await this.jwt.verifyAsync<VerifiedClaims>(accessToken);
     const { id, expiresAtMs } = this.principals.validateVerifiedClaims(claims);
-    await this.principals.resolveActive(id);
+    assertLocationReady(await this.principals.resolveActive(id));
     const sessionExp = Math.floor(expiresAtMs / 1000);
     const exp = Math.min(sessionExp, Math.floor(Date.now() / 1000) + 60);
     const ticket = await this.jwt.signAsync(
