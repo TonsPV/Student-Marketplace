@@ -682,7 +682,12 @@ export class PostsService {
         locationName: true,
         createdAt: true,
         soldAt: true,
-        seller: { id: true, fullName: true, avatarUrl: true },
+        seller: {
+          id: true,
+          fullName: true,
+          avatarUrl: true,
+          avatarStorageKey: true,
+        },
         category: { id: true, name: true },
       },
       order: { soldAt: "DESC" },
