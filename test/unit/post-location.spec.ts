@@ -78,6 +78,7 @@ describe("post location API contract", () => {
               "select",
               "distinctOn",
               "where",
+              "andWhere",
               "orderBy",
               "addOrderBy",
             ])

@@ -1,3 +1,5 @@
+import { PaymentOrder, PaymentRequest } from "../../src/modules/payments/payment.entity";
+import { Promotion } from "../../src/modules/promotions/promotion.entity";
 import "reflect-metadata";
 import { config } from "dotenv";
 import { DataSource } from "typeorm";
@@ -52,6 +54,9 @@ export function createTestDataSource(): DataSource {
   return new DataSource({
     ...databaseOptions({ ...testDatabaseEnv(), POSTGRES_SCHEMA: schema }),
     entities: [
+      PaymentOrder,
+      PaymentRequest,
+      Promotion,
       UserEntity,
       PasswordResetChallengeEntity,
       CategoryEntity,
