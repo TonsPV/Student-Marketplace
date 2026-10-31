@@ -1,3 +1,4 @@
+import { Promotion } from "../promotions/promotion.entity";
 import {
   BadRequestException,
   InternalServerErrorException,
@@ -171,7 +172,9 @@ export class PostsService {
     });
 
     return {
-      items: items.map((post) => this.toResponse(post)),
+      items: await this.withPromotionMetadata(
+        items.map((post) => this.toResponse(post)),
+      ),
       meta: createPaginationMeta(query, total),
     };
   }
@@ -270,9 +273,22 @@ export class PostsService {
         });
     }
 
+    const schema =
+      (this.dataSource.options as { schema?: string }).schema ?? "public";
+    if (!/^[a-z][a-z0-9_]*$/.test(schema)) throw new Error("Invalid schema");
+    queryBuilder.addSelect(
+      `(SELECT MAX(pr."endsAt") FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP)`,
+      "promoted_until",
+    );
+    queryBuilder.addSelect(`CASE WHEN (SELECT COUNT(*) FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP)>0 THEN 1 ELSE 0 END`, "promotion_priority");
     const total = await queryBuilder.clone().getCount();
     const { entities, raw } = await queryBuilder
-      .orderBy("post.createdAt", "DESC")
+      .orderBy(
+        query.sort === "newest" ? "post.createdAt" : "promotion_priority",
+        "DESC",
+        "NULLS LAST",
+      )
+      .addOrderBy("post.createdAt", "DESC")
       .addOrderBy("post.id", "DESC")
       .skip((page - 1) * limit)
       .take(limit)
@@ -281,6 +297,8 @@ export class PostsService {
     const cards = await this.withListThumbnails(entities);
     const items = cards.map((post, index) => ({
       ...post,
+      isPromoted: !!raw[index].promoted_until,
+      promotedUntil: raw[index].promoted_until ?? null,
       distance: hasLocationFilter ? Number(raw[index].distance) : null,
     }));
 
@@ -380,6 +398,31 @@ export class PostsService {
     };
   }
 
+  private async withPromotionMetadata<
+    T extends { id: string; status?: string },
+  >(posts: T[]) {
+    if (!posts.length) return [];
+    const promotions = await this.dataSource
+      .getRepository(Promotion)
+      .createQueryBuilder("pr")
+      .where('pr."postId" IN (:...ids)', { ids: posts.map((p) => p.id) })
+      .andWhere(
+        'pr."endsAt">CURRENT_TIMESTAMP AND pr."startsAt"<=CURRENT_TIMESTAMP',
+      )
+      .getMany();
+    return posts.map((p) => {
+      const ends = promotions
+        .filter((pr) => pr.postId === p.id)
+        .map((pr) => pr.endsAt)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+      return {
+        ...p,
+        isPromoted: p.status === "active" && !!ends,
+        promotedUntil: p.status === "active" ? (ends ?? null) : null,
+      };
+    });
+  }
+
   private async withListThumbnails(posts: PostEntity[]) {
     if (posts.length === 0) return [];
 
@@ -413,8 +456,11 @@ export class PostsService {
             this.logger.warn(`Could not sign thumbnail for post ${post.id}`);
           }
         }
+        const card = await this.withSellerAvatar(post);
+        // Entity class fields may exist as undefined; list payloads omit galleries.
+        const { images: _images, ...summary } = card;
         return {
-          ...(await this.withSellerAvatar(post)),
+          ...summary,
           thumbnailUrl,
           ...(thumbnailUrlExpiresAt ? { thumbnailUrlExpiresAt } : {}),
         };
