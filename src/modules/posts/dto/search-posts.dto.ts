@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+    IsIn,
     IsDefined,
     IsInt,
     IsNumber,
@@ -19,6 +20,9 @@ const hasLocationFilter = (dto: SearchPostsDto): boolean =>
     dto.radius !== undefined;
 
 export class SearchPostsDto {
+    @IsOptional()
+    @IsIn(["priority", "newest"])
+    sort?: "priority" | "newest";
     @ApiPropertyOptional({ type: String, format: 'uuid' })
     @IsOptional()
     @IsUUID()

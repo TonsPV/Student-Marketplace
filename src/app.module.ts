@@ -1,3 +1,4 @@
+import { PaymentsModule } from "./modules/payments/payments.module";
 import { Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { ConfigModule, ConfigService } from "@nestjs/config";
@@ -63,6 +64,7 @@ import { PoliciesGuard } from "./modules/authorization/guards/policies.guard";
         autoLoadEntities: true,
       }),
     }),
+    PaymentsModule,
     AuthModule,
     UserModule,
     PostsModule,
