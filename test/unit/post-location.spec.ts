@@ -13,6 +13,7 @@ import {
 } from "../../src/modules/posts/post.entity";
 import { PostsService } from "../../src/modules/posts/posts.service";
 import { StorageService } from "../../src/modules/storage/storage.service";
+import { UserEntity } from "../../src/modules/user/user.entity";
 
 const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const categoryId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -54,6 +55,7 @@ describe("post location API contract", () => {
     for (const method of ["setLock", "where", "withDeleted"])
       query[method] = jest.fn().mockReturnValue(query);
     query.getOne = jest.fn().mockImplementation(async () => post);
+    query.getOneOrFail = jest.fn().mockImplementation(async () => post);
     repo = {
       create: jest
         .fn()
@@ -62,6 +64,8 @@ describe("post location API contract", () => {
       findAndCount: jest.fn().mockImplementation(async () => [[post], 1]),
       createQueryBuilder: jest.fn().mockReturnValue(query),
       restore: jest.fn(),
+      countBy: jest.fn().mockResolvedValue(0),
+      findOne: jest.fn().mockImplementation(async () => post),
       findOneByOrFail: jest.fn().mockImplementation(async () => post),
     };
     service = new PostsService(
@@ -87,8 +91,27 @@ describe("post location API contract", () => {
             return images;
           },
         }),
-        transaction: async (fn: (manager: unknown) => unknown) =>
-          fn({ getRepository: () => repo }),
+        transaction: async (
+          fnOrIsolation: string | ((manager: unknown) => unknown),
+          work?: (manager: unknown) => unknown,
+        ) =>
+          (work ?? (fnOrIsolation as (manager: unknown) => unknown))({
+            query: async () => [{ now: new Date() }],
+            getRepository: (entity: unknown) =>
+              entity === UserEntity
+                ? {
+                    createQueryBuilder: () => ({
+                      setLock: () => ({
+                        where: () => ({
+                          getOne: async () => ({ id, isLocked: false }),
+                        }),
+                      }),
+                    }),
+                  }
+                : entity === CategoryEntity
+                  ? { findOneBy: async () => ({ id: categoryId }) }
+                  : repo,
+          }),
       } as unknown as DataSource,
       {} as StorageService,
     );

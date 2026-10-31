@@ -1,5 +1,9 @@
 # Student Marketplace API
 
+## Quota và vòng đời tin đăng
+
+Tin đăng có quota 5 tin hiển thị/người, hạn 14 ngày, nhắc trước 3 ngày và một lần gia hạn miễn phí mỗi tin. API, migration, quy tắc dữ liệu cũ và điểm tích hợp uy tín/thanh toán được mô tả trong [hướng dẫn vòng đời tin](src/modules/posts/POST_LIFECYCLE.md).
+
 ## Đồng bộ chat tăng dần
 
 `GET /api/v1/conversations/:id/messages` nhận thêm `afterSequence` (chuỗi số nguyên thập phân không âm, tối đa bigint PostgreSQL). Backend kiểm tra quyền tham gia trước khi đọc lịch sử, rồi giới hạn `sequence > afterSequence`. Có thể kết hợp với cursor `before` hiện có để phân trang một khoảng tin mới; response vẫn mới → cũ, lấy `limit + 1`, trả `nextCursor` và `hasMore`. Không có migration DB mới; index `(conversation_id, sequence)` hiện có phục vụ khoảng sequence này.

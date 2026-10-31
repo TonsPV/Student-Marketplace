@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { Logger, NotFoundException } from "@nestjs/common";
-import { DataSource, Repository } from "typeorm";
+import { DataSource, Not, Repository } from "typeorm";
 import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
 import { CaslAbilityFactory } from "../../src/modules/authorization/casl-ability.factory";
 import { ConversationsService } from "../../src/modules/conversations/conversations.service";
@@ -116,6 +116,25 @@ describe("review notification reads", () => {
     expect(realtime.emitToUser).not.toHaveBeenCalled();
   });
 
+  it("reads an expiry notification without treating its post ID as a conversation", async () => {
+    const state = setup();
+    state.repository.findOneBy.mockResolvedValue(
+      Object.assign(new NotificationEntity(), {
+        id: NOTIFICATION,
+        userId: USER,
+        type: NotificationType.POST_EXPIRED,
+        refId: POST,
+      }),
+    );
+    await state.service.markOneAsRead(context, NOTIFICATION);
+    expect(state.conversations.lockForAction).not.toHaveBeenCalled();
+    expect(state.realtime.emitToUser).toHaveBeenCalledWith(
+      USER,
+      WS_EVENTS.NOTIFICATION_CHANGED,
+      { type: NotificationType.POST_EXPIRED, refId: POST },
+    );
+  });
+
   it("reads review-only notifications and emits after transaction commit", async () => {
     const state = setup(2);
     state.realtime.emitToUser.mockImplementation(() => {
@@ -126,13 +145,13 @@ describe("review notification reads", () => {
       snapshots: [],
     });
     expect(state.reviewUpdate).toHaveBeenCalledWith(
-      { userId: USER, type: NotificationType.REVIEW_REQUEST, isRead: false },
+      { userId: USER, type: Not(NotificationType.NEW_MESSAGE), isRead: false },
       { isRead: true },
     );
     expect(state.realtime.emitToUser).toHaveBeenCalledWith(
       USER,
       WS_EVENTS.NOTIFICATION_CHANGED,
-      { type: NotificationType.REVIEW_REQUEST, refId: null },
+      { scope: "non_message", refId: null },
     );
     expect(state.conversations.lockForAction).not.toHaveBeenCalled();
   });
@@ -169,7 +188,7 @@ describe("review notification reads", () => {
     expect(state.realtime.emitToUser).toHaveBeenCalledWith(
       USER,
       WS_EVENTS.NOTIFICATION_CHANGED,
-      { type: NotificationType.REVIEW_REQUEST, refId: null },
+      { scope: "non_message", refId: null },
     );
   });
 

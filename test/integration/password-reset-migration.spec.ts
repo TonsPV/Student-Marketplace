@@ -68,9 +68,9 @@ describe("password reset migration", () => {
       await migration.down(runner);
       expect(
         (
-          await runner.query(
-            `SELECT to_regclass('password_reset_challenges') AS table_name`,
-          )
+          await runner.query(`SELECT to_regclass($1) AS table_name`, [
+            `${ownedTestSchema(ds)}.password_reset_challenges`,
+          ])
         )[0].table_name,
       ).toBeNull();
       await migration.up(runner);

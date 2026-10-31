@@ -83,7 +83,7 @@ export function toPostProjection(raw: {
   const sellerId = assertUuid(sellerRaw, "Post.sellerId");
   if (
     typeof raw.status !== "string" ||
-    !["active", "sold", "hidden"].includes(raw.status)
+    !["active", "sold", "hidden", "expired"].includes(raw.status)
   ) {
     throw new InternalServerErrorException(
       "Invalid subject projection: Post.status",

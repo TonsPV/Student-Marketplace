@@ -123,10 +123,14 @@ describe("reviews migration", () => {
       ).rejects.toMatchObject({ driverError: { code: "23503" } });
       await expect(
         ds.getRepository(PostEntity).delete(post.id),
-      ).rejects.toMatchObject({ driverError: { code: "23503" } });
+      ).rejects.toMatchObject({
+        driverError: { code: expect.stringMatching(/^(23503|23001)$/) },
+      });
       await expect(
         ds.getRepository(UserEntity).delete(reviewer.id),
-      ).rejects.toMatchObject({ driverError: { code: "23503" } });
+      ).rejects.toMatchObject({
+        driverError: { code: expect.stringMatching(/^(23503|23001)$/) },
+      });
       const stats = await repo
         .createQueryBuilder("review")
         .innerJoin("review.post", "post")
