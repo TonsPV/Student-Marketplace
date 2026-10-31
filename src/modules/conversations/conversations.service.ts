@@ -168,7 +168,7 @@ export class ConversationsService {
         status: PostStatus;
       }> = await manager.query(
         `SELECT id, seller_id, status, deleted_at FROM posts
-          WHERE id = $1 AND deleted_at IS NULL FOR SHARE`,
+          WHERE id = $1 AND deleted_at IS NULL AND expires_at > statement_timestamp() FOR SHARE`,
         [postId],
       );
       const post = postRows[0];

@@ -3,10 +3,10 @@ import { InjectRepository } from "@nestjs/typeorm";
 import { QueryFailedError, Repository } from "typeorm";
 import { PaginationDto } from "../../common/dto/pagination.dto";
 import { createPaginationMeta } from "../../common/utils/pagination.util";
-import { PostStatus } from "../posts/post.entity";
 import { PostsService } from "../posts/posts.service";
 import { FavoriteEntity } from "./favorite.entity";
 import { AuthorizationService } from "../authorization/authorization.service";
+import { publicPostSql } from "../posts/post-lifecycle.constants";
 import type { AuthenticatedContext } from "../authorization/authorization.types";
 
 @Injectable()
@@ -65,10 +65,7 @@ export class FavoritesService {
       .addSelect(["category.id", "category.name"])
       .leftJoinAndSelect("post.images", "image")
       .where("favorite.userId = :userId", { userId })
-      .andWhere("post.deletedAt IS NULL")
-      .andWhere("post.status IN (:...statuses)", {
-        statuses: [PostStatus.ACTIVE, PostStatus.SOLD],
-      })
+      .andWhere(publicPostSql("post"))
       .orderBy("favorite.createdAt", "DESC")
       .addOrderBy("favorite.id", "DESC")
       .skip((query.page - 1) * query.limit)

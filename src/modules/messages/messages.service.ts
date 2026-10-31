@@ -547,7 +547,11 @@ export class MessagesService {
         const post = await this.dataSource
           .getRepository(PostEntity)
           .findOneBy({ id: input.postId });
-        if (!post || post.status !== PostStatus.ACTIVE) {
+        if (
+          !post ||
+          post.status !== PostStatus.ACTIVE ||
+          post.expiresAt?.getTime() <= Date.now()
+        ) {
           throw new NotFoundException("Post not found or not available");
         }
         if (post.sellerId === senderId) {
@@ -649,7 +653,7 @@ export class MessagesService {
       if (input.postId) {
         const postRows = (await manager.query(
           `SELECT id, seller_id, status, deleted_at FROM posts
-            WHERE id = $1 AND deleted_at IS NULL FOR SHARE`,
+            WHERE id = $1 AND deleted_at IS NULL AND expires_at > statement_timestamp() FOR SHARE`,
           [input.postId],
         )) as Array<{ id: string; seller_id: string; status: PostStatus }>;
         const post = postRows[0];

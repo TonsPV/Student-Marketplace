@@ -1,10 +1,14 @@
-import { NotificationType } from "../notification.entity";
+import {
+  NotificationType,
+  NotificationTargetType,
+} from "../notification.entity";
 
 export class NotificationResponseDto {
   id!: string;
   type!: NotificationType;
   /** Với NEW_MESSAGE luôn là conversationId. */
   refId!: string | null;
+  target!: { type: NotificationTargetType; id: string } | null;
   title!: string;
   body!: string | null;
   isRead!: boolean;

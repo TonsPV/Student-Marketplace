@@ -60,4 +60,14 @@ export class PostImagesController {
   ) {
     return this.postImagesService.remove(postId, imageId, ctx);
   }
+
+  @Get("me")
+  @CheckPolicies({ action: "manageImages", subject: "Post" })
+  @ApiBearerAuth("access-token")
+  findOwned(
+    @Param("postId", new ParseUUIDPipe()) postId: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.postImagesService.findOwned(postId, ctx);
+  }
 }

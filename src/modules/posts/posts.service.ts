@@ -11,9 +11,9 @@ import {
   Brackets,
   DataSource,
   EntityManager,
-  In,
   IsNull,
   Not,
+  Raw,
   Repository,
 } from "typeorm";
 
@@ -46,6 +46,10 @@ import { MarkPostSoldDto } from "./dto/mark-post-sold.dto";
 import { PurchaseReviewStatus } from "./dto/purchased-post-response.dto";
 import { sellerStatistics } from "../reviews/seller-statistics";
 import { PostImageEntity } from "../post-images/post-image.entity";
+import { PostLifecycleService } from "./post-lifecycle.service";
+import { PostActivationPolicyService } from "./post-activation-policy.service";
+import { visiblePostSql } from "./post-lifecycle.constants";
+import { PaginationDto } from "../../common/dto/pagination.dto";
 
 @Injectable()
 export class PostsService {
@@ -70,6 +74,11 @@ export class PostsService {
     private readonly reviewsRepository?: Repository<ReviewEntity>,
     @Optional()
     private readonly realtime?: RealtimeService,
+    private readonly lifecycle: PostLifecycleService = new PostLifecycleService(
+      dataSource,
+      authorization,
+      new PostActivationPolicyService(),
+    ),
   ) {}
 
   async create(dto: CreatePostDto, context: AuthenticatedContext) {
@@ -89,20 +98,30 @@ export class PostsService {
     if (Object.keys(input).some((field) => !fields.has(field))) {
       throw new BadRequestException("Unknown post field");
     }
-    await this.ensureCategoryExists(dto.categoryId);
+    return this.toResponse(await this.lifecycle.create(dto, context));
+  }
 
-    const post = this.postsRepository.create({
-      categoryId: dto.categoryId,
-      title: dto.title,
-      description: dto.description,
-      price: dto.price,
-      condition: dto.condition,
-      location: this.toStoredLocation(dto.location),
-      locationName: dto.locationName ?? null,
-      sellerId: context.principal.id,
-    });
+  quota(context: AuthenticatedContext) {
+    return this.lifecycle.quota(context);
+  }
 
-    return this.toResponse(await this.postsRepository.save(post));
+  async renew(id: string, context: AuthenticatedContext) {
+    return this.toResponse(await this.lifecycle.renewFree(id, context));
+  }
+
+  renewalHistory(
+    id: string,
+    context: AuthenticatedContext,
+    query: PaginationDto,
+  ) {
+    return this.lifecycle.renewalHistory(id, context, query);
+  }
+
+  async findMyPost(id: string, context: AuthenticatedContext) {
+    const post = await this.getOwnedPost(id, context);
+    if (post.sellerId !== context.principal.id)
+      throw new NotFoundException("Post not found");
+    return this.toResponse(post);
   }
 
   async findAll(query: FindPostsDto, context: AuthorizationContext) {
@@ -112,6 +131,7 @@ export class PostsService {
     const [items, total] = await this.postsRepository.findAndCount({
       where: {
         status: PostStatus.ACTIVE,
+        expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
         ...(categoryId ? { categoryId } : {}),
       },
       relations: {
@@ -132,6 +152,7 @@ export class PostsService {
       },
       order: {
         createdAt: "DESC",
+        id: "DESC",
       },
       skip: (page - 1) * limit,
       take: limit,
@@ -148,12 +169,23 @@ export class PostsService {
     const { page, limit, categoryId } = query;
     const [items, total] = await this.postsRepository.findAndCount({
       withDeleted: query.deleted === "true",
-      where: {
+      where: (query.status === PostStatus.EXPIRED
+        ? [PostStatus.ACTIVE, PostStatus.EXPIRED]
+        : [query.status]
+      ).map((status) => ({
         sellerId: context.principal.id,
         ...(query.deleted === "true" ? { deletedAt: Not(IsNull()) } : {}),
-        ...(query.status ? { status: query.status } : {}),
+        ...(status ? { status } : {}),
+        ...(status === PostStatus.ACTIVE
+          ? {
+              expiresAt: Raw(
+                (alias) =>
+                  `${alias} ${query.status === PostStatus.EXPIRED ? "<=" : ">"} statement_timestamp()`,
+              ),
+            }
+          : {}),
         ...(categoryId ? { categoryId } : {}),
-      },
+      })),
       relations: {
         category: true,
       },
@@ -165,6 +197,7 @@ export class PostsService {
       },
       order: {
         createdAt: "DESC",
+        id: "DESC",
       },
       skip: (page - 1) * limit,
       take: limit,
@@ -205,8 +238,7 @@ export class PostsService {
       ])
       .leftJoin("post.category", "category")
       .addSelect(["category.id", "category.name"])
-      .where("post.status = :status", { status: PostStatus.ACTIVE })
-      .andWhere("post.deleted_at IS NULL");
+      .where(visiblePostSql("post"));
 
     if (q) {
       const schema =
@@ -297,10 +329,14 @@ export class PostsService {
 
   async findOne(id: string, context: AuthorizationContext) {
     const post = await this.postsRepository.findOne({
-      where: {
-        id,
-        status: In([PostStatus.ACTIVE, PostStatus.SOLD]),
-      },
+      where: [
+        {
+          id,
+          status: PostStatus.ACTIVE,
+          expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
+        },
+        { id, status: PostStatus.SOLD },
+      ],
       relations: {
         seller: true,
         category: true,
@@ -359,9 +395,23 @@ export class PostsService {
     };
   }
 
-  async getReadablePost(id: string) {
+  async getReadablePost(id: string, context?: AuthorizationContext) {
+    if (context?.kind === "authenticated") {
+      const owned = await this.postsRepository.findOneBy({
+        id,
+        sellerId: context.principal.id,
+      });
+      if (owned) return owned;
+    }
     const post = await this.postsRepository.findOne({
-      where: { id, status: In([PostStatus.ACTIVE, PostStatus.SOLD]) },
+      where: [
+        {
+          id,
+          status: PostStatus.ACTIVE,
+          expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
+        },
+        { id, status: PostStatus.SOLD },
+      ],
     });
     if (!post) throw new NotFoundException("Post not found");
     return post;
@@ -413,8 +463,9 @@ export class PostsService {
             this.logger.warn(`Could not sign thumbnail for post ${post.id}`);
           }
         }
+        const { images: _gallery, ...card } = await this.withSellerAvatar(post);
         return {
-          ...(await this.withSellerAvatar(post)),
+          ...card,
           thumbnailUrl,
           ...(thumbnailUrlExpiresAt ? { thumbnailUrlExpiresAt } : {}),
         };
@@ -424,7 +475,11 @@ export class PostsService {
 
   async getActivePost(id: string) {
     const post = await this.postsRepository.findOne({
-      where: { id, status: PostStatus.ACTIVE },
+      where: {
+        id,
+        status: PostStatus.ACTIVE,
+        expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
+      },
     });
 
     if (!post) {
@@ -750,32 +805,7 @@ export class PostsService {
   }
 
   async restore(id: string, context: AuthenticatedContext) {
-    return this.dataSource.transaction(async (manager) => {
-      const repo = manager.getRepository(PostEntity);
-      const post = await repo
-        .createQueryBuilder("post")
-        .withDeleted()
-        .setLock("pessimistic_write")
-        .where("post.id = :id", { id })
-        .getOne();
-      if (!post) throw new NotFoundException("Post not found");
-      this.authorization.assertResource(
-        context,
-        "restore",
-        "Post",
-        toPostProjection({
-          id: post.id,
-          sellerId: post.sellerId,
-          status: post.status,
-          deletedAt: post.deletedAt,
-        }) as unknown as Record<string, unknown>,
-      );
-      if (!post.deletedAt) {
-        return this.toResponse(post);
-      }
-      await repo.restore(id);
-      return this.toResponse(await repo.findOneByOrFail({ id }));
-    });
+    return this.toResponse(await this.lifecycle.restore(id, context));
   }
 
   async getOwnedPost(
@@ -784,7 +814,7 @@ export class PostsService {
     withDeleted = false,
   ) {
     const post = await this.postsRepository.findOne({
-      where: { id },
+      where: { id, sellerId: context.principal.id },
       withDeleted,
     });
 
@@ -852,6 +882,12 @@ export class PostsService {
   private toResponse(post: PostEntity) {
     return {
       ...post,
+      status:
+        post.status === PostStatus.ACTIVE &&
+        post.expiresAt?.getTime() <= Date.now()
+          ? PostStatus.EXPIRED
+          : post.status,
+      freeRenewalAvailable: post.renewalCount === 0,
       location: post.location
         ? {
             latitude: post.location.coordinates[1],

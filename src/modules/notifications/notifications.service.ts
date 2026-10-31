@@ -2,7 +2,7 @@ import { AuthorizationService } from "../authorization/authorization.service";
 import type { AuthenticatedContext } from "../authorization/authorization.types";
 import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
-import { DataSource, EntityManager, In, Repository } from "typeorm";
+import { DataSource, EntityManager, In, Not, Repository } from "typeorm";
 import { uuidv7 } from "uuidv7";
 import { PaginationDto } from "../../common/dto/pagination.dto";
 import { createPaginationMeta } from "../../common/utils/pagination.util";
@@ -11,7 +11,11 @@ import { ConversationEntity } from "../conversations/entities/conversation.entit
 import { buildMessagePreview } from "../messages/messages.mapper";
 import { RealtimeService } from "../realtime/realtime.service";
 import { WS_EVENTS } from "../realtime/realtime.events";
-import { NotificationEntity, NotificationType } from "./notification.entity";
+import {
+  NotificationEntity,
+  NotificationType,
+  NotificationTargetType,
+} from "./notification.entity";
 import {
   NotificationResponseDto,
   NotificationSnapshot,
@@ -46,6 +50,18 @@ export class NotificationsService {
       id: entity.id,
       type: entity.type,
       refId: entity.refId,
+      target: entity.refId
+        ? {
+            type:
+              entity.targetType ??
+              (entity.type === NotificationType.NEW_MESSAGE
+                ? "conversation"
+                : entity.type === NotificationType.REVIEW_REQUEST
+                  ? "purchase"
+                  : "my_post"),
+            id: entity.refId,
+          }
+        : null,
       title: entity.title,
       body: entity.body,
       isRead: entity.isRead,
@@ -62,6 +78,45 @@ export class NotificationsService {
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
+  }
+
+  /** Persist inside the business transaction; a unique key deduplicates workers/retries. */
+  async createOnce(
+    manager: EntityManager,
+    input: {
+      userId: string;
+      type: NotificationType;
+      refId: string;
+      targetType: NotificationTargetType;
+      dedupKey: string;
+      title: string;
+      body: string;
+    },
+  ): Promise<NotificationEntity | null> {
+    const result = await manager
+      .getRepository(NotificationEntity)
+      .createQueryBuilder()
+      .insert()
+      .values({ id: uuidv7(), ...input, isRead: false })
+      .orIgnore()
+      .returning("*")
+      .execute();
+    return result.raw[0] ? this.mapRawRow(result.raw[0]) : null;
+  }
+
+  /** Call only after the transaction commits. REST is authoritative if socket fails. */
+  emitCreated(entity: NotificationEntity): void {
+    try {
+      this.realtime.emitToUser(
+        entity.userId,
+        WS_EVENTS.NOTIFICATION_NEW,
+        NotificationsService.toResponse(entity),
+      );
+    } catch (error) {
+      this.logger.error(
+        `emit notification:new failed: ${error instanceof Error ? error.message : error}`,
+      );
+    }
   }
 
   // ── Atomic upsert (chỉ gọi khi có message MỚI, đã giữ conversation lock) ───
@@ -236,7 +291,7 @@ export class NotificationsService {
         { isRead: true },
       );
       if ((updated.affected ?? 0) > 0) {
-        this.emitReviewRead(userId, owned.refId);
+        this.emitNonMessageRead(userId, owned.refId, owned.type);
       }
       return { updated: updated.affected ?? 0, snapshots: [] };
     }
@@ -374,11 +429,11 @@ export class NotificationsService {
             convSnapshots.push({ userId, snapshot: convSnapshot });
         }
       }
-      // Review invitations do not have conversation versions or message watermarks.
+      // Non-message notifications do not have conversation versions/watermarks.
       const reviews = await manager
         .getRepository(NotificationEntity)
         .update(
-          { userId, type: NotificationType.REVIEW_REQUEST, isRead: false },
+          { userId, type: Not(NotificationType.NEW_MESSAGE), isRead: false },
           { isRead: true },
         );
       const reviewsUpdated = reviews.affected ?? 0;
@@ -397,7 +452,7 @@ export class NotificationsService {
         | undefined;
       if (conv) this.emitNotificationRead(userId, snapshot, conv);
     }
-    if (result.reviewsUpdated > 0) this.emitReviewRead(userId, null);
+    if (result.reviewsUpdated > 0) this.emitNonMessageRead(userId, null);
     return { updated: result.updated, snapshots: result.snapshots };
   }
 
@@ -420,6 +475,7 @@ export class NotificationsService {
         const conversationIds = [
           ...new Set(
             items
+              .filter((n) => n.type === NotificationType.NEW_MESSAGE)
               .map((n) => n.refId)
               .filter((ref): ref is string => ref !== null),
           ),
@@ -482,10 +538,14 @@ export class NotificationsService {
   // ── Emit helpers ───────────────────────────────────────────────────────────
 
   /** Invalidation event: clients reload notification list/count via REST. */
-  private emitReviewRead(userId: string, refId: string | null): void {
+  private emitNonMessageRead(
+    userId: string,
+    refId: string | null,
+    type?: NotificationType,
+  ): void {
     try {
       this.realtime.emitToUser(userId, WS_EVENTS.NOTIFICATION_CHANGED, {
-        type: NotificationType.REVIEW_REQUEST,
+        ...(type ? { type } : { scope: "non_message" }),
         refId,
       });
     } catch (err) {
@@ -532,6 +592,9 @@ export class NotificationsService {
       mapped.id = String(record["id"]);
       mapped.userId = String(record["user_id"]);
       mapped.type = record["type"] as NotificationType;
+      mapped.targetType = (record["target_type"] ??
+        null) as NotificationTargetType | null;
+      mapped.dedupKey = (record["dedup_key"] ?? null) as string | null;
       mapped.refId =
         record["ref_id"] === null || record["ref_id"] === undefined
           ? null

@@ -12,6 +12,12 @@ import { ReviewEntity } from "../reviews/review.entity";
 import { NotificationEntity } from "../notifications/notification.entity";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { RealtimeModule } from "../realtime/realtime.module";
+import { UserEntity } from "../user/user.entity";
+import { PostRenewalEntity } from "./post-renewal.entity";
+import { PostActivationPolicyService } from "./post-activation-policy.service";
+import { PostLifecycleService } from "./post-lifecycle.service";
+import { PostExpiryService } from "./post-expiry.service";
+import { PostExpiryScheduler } from "./post-expiry.scheduler";
 
 @Module({
   imports: [
@@ -22,6 +28,8 @@ import { RealtimeModule } from "../realtime/realtime.module";
       MessageEntity,
       ReviewEntity,
       NotificationEntity,
+      UserEntity,
+      PostRenewalEntity,
     ]),
     AuthorizationModule,
     StorageModule,
@@ -29,7 +37,13 @@ import { RealtimeModule } from "../realtime/realtime.module";
     RealtimeModule,
   ],
   controllers: [PostsController],
-  providers: [PostsService],
-  exports: [PostsService],
+  providers: [
+    PostsService,
+    PostActivationPolicyService,
+    PostLifecycleService,
+    PostExpiryService,
+    PostExpiryScheduler,
+  ],
+  exports: [PostsService, PostLifecycleService],
 })
 export class PostsModule {}

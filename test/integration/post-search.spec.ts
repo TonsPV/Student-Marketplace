@@ -279,6 +279,13 @@ describe("accent-insensitive post search", () => {
     await runner.startTransaction();
     try {
       // Small fixtures normally favor sequential scans; this checks index eligibility.
+      // Isolate GIN eligibility from the lifecycle B-trees on this tiny dataset.
+      // The transaction rollback restores these indexes; the next test checks
+      // the planner with every index present and realistic row counts.
+      await runner.query(
+        `DROP INDEX "${schema}".idx_posts_seller_status_expires`,
+      );
+      await runner.query(`DROP INDEX "${schema}".idx_posts_status_expires`);
       await runner.query("SET LOCAL enable_seqscan = off");
       const plans = await runner.query(
         `EXPLAIN (FORMAT JSON) SELECT id FROM "${schema}".posts

@@ -8,6 +8,7 @@ import { MessageEntity } from "../../src/modules/messages/entities/message.entit
 import { MessageImageEntity } from "../../src/modules/messages/entities/message-image.entity";
 import { NotificationEntity } from "../../src/modules/notifications/notification.entity";
 import { PostEntity } from "../../src/modules/posts/post.entity";
+import { PostRenewalEntity } from "../../src/modules/posts/post-renewal.entity";
 import { PostImageEntity } from "../../src/modules/post-images/post-image.entity";
 import { UserEntity } from "../../src/modules/user/user.entity";
 import { CategoryEntity } from "../../src/modules/categories/category.entity";
@@ -56,6 +57,7 @@ export function createTestDataSource(): DataSource {
       PasswordResetChallengeEntity,
       CategoryEntity,
       PostEntity,
+      PostRenewalEntity,
       PostImageEntity,
       RefreshTokenEntity,
       ReportEntity,

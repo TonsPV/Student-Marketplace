@@ -38,5 +38,6 @@ export function definePostRules(
   can("markSold", "Post", { sellerId: actor.id });
   can("delete", "Post", { sellerId: actor.id });
   can("restore", "Post", { sellerId: actor.id });
+  can("renew", "Post", { sellerId: actor.id });
   can("manageImages", "Post", { sellerId: actor.id });
 }
