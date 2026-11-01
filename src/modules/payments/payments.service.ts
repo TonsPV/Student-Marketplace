@@ -193,7 +193,8 @@ export class PaymentsService implements OnModuleInit {
         .getRepository(UserEntity)
         .createQueryBuilder("u")
         .where("u.id=:owner", { owner })
-        .setLock("pessimistic_write")
+        // Serialize seller operations without blocking notification FK KEY SHARE.
+        .setLock("for_no_key_update")
         .getOne();
       const receipt = await m.findOneBy(PaymentRequest, {
         ownerId: owner,
@@ -358,7 +359,7 @@ export class PaymentsService implements OnModuleInit {
           .createQueryBuilder("u")
           .withDeleted()
           .where("u.id=:id", { id: found.ownerId })
-          .setLock("pessimistic_write")
+          .setLock("for_no_key_update")
           .getOne();
         const post = await m
           .getRepository(PostEntity)

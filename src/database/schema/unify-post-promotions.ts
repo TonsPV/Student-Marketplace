@@ -102,3 +102,34 @@ export async function unifyPostPromotions(q: QueryRunner): Promise<void> {
     );
   }
 }
+
+/** An adopted branch's columns/history cannot be removed by reverting its prerequisites. */
+export async function assertIndependentMigrationRollback(
+  q: QueryRunner,
+  name: string,
+): Promise<void> {
+  const options = q.connection.options as {
+    schema?: string;
+    migrationsTableName?: string;
+  };
+  const schema = options.schema ?? "public",
+    table = options.migrationsTableName ?? "migrations";
+  if (
+    !/^[a-z][a-z0-9_]*$/.test(schema) ||
+    !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(table)
+  )
+    throw new Error("Invalid migration history table");
+  if (!(await q.hasTable(`${schema}.${table}`))) return;
+  const rows: Array<{ id: number; name: string }> = await q.query(
+    `SELECT id,name FROM "${schema}"."${table}" WHERE name IN ($1,$2)`,
+    [name, "PostExpiryAndPromotions1791830000000"],
+  );
+  const own = rows.find((row) => row.name === name),
+    adopted = rows.find(
+      (row) => row.name === "PostExpiryAndPromotions1791830000000",
+    );
+  if (own && adopted && adopted.id < own.id)
+    throw new Error(
+      "Cannot automatically revert a migration that adopted an existing branch schema; use a reviewed forward migration",
+    );
+}

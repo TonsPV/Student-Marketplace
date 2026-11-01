@@ -33,7 +33,6 @@ export function reputationSubquery(schema: string): string {
              INNER JOIN ${posts} eligible_post
                 ON eligible_post.id = review.post_id
              WHERE review.deleted_at IS NULL
-               AND eligible_post.deleted_at IS NULL
                AND eligible_post.status IN ('active', 'sold')
              GROUP BY eligible_post.seller_id)`;
 }

@@ -202,3 +202,15 @@ npm.cmd run test:integration -- --runInBand post-lifecycle
 
 Các integration test tạo schema ngẫu nhiên riêng, chỉ dọn schema do test sở hữu. Bao gồm tranh suất giữa tạo/khôi phục/gia hạn, thời hạn khi job dừng, miễn phí một lần, thanh toán lặp/rollback, worker đồng thời và migration dữ liệu cũ.
 FE trong repo `student-marketplace-nextjs` đã tích hợp hạn mức trên form đăng/hồ sơ, tab “Hết hạn”, nút gia hạn miễn phí, lịch sử và điều hướng thông báo. Trang `/my-posts/:id` dùng API riêng để chủ tin xem tin hết hạn; sau đăng nhập vẫn quay về đúng trang này. Gia hạn trả phí hiện chưa khả dụng trên giao diện, chờ module thanh toán của nhóm trưởng.
+
+
+## Merge lịch sử migration giữa các nhánh
+
+Các migration nền `PostLifecycle1791810000000` và `PaymentsPromotions1791810000000` nhận diện cấu trúc đã có từ nhánh khác:
+
+- Giữ nguyên hạn tin đã có, kể cả hạn đã qua; chỉ tin chưa có hạn nhận thời gian chuyển tiếp 14 ngày.
+- Giữ ID, thời gian chạy, người tạo và thông tin hủy của lịch đẩy admin; bổ sung liên kết đơn thanh toán vào bảng dùng chung.
+- Hỗ trợ cả hai thứ tự của các migration có cùng timestamp. Migration `179184` hoàn tất việc hợp nhất nếu bản `179183` cũ đã được ghi nhận.
+- Pull đầy đủ code rồi chạy `npm run migration:run`. Không xóa lịch sử migration, không đánh dấu giả đã chạy và không cần reset DB.
+- Migration đã được ghi nhận không chạy lại. DB hiện đã áp dụng đủ migration chỉ cần khởi động lại BE để nhận thay đổi nghiệp vụ.
+- Rollback tự động bị chặn nếu migration nền nhận dùng cấu trúc của nhánh đã chạy trước đó; sửa bằng forward migration được kiểm tra riêng để bảo toàn dữ liệu.

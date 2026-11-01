@@ -234,12 +234,12 @@ export class ReviewsService {
     const { page, limit } = query;
     const queryBuilder = this.reviewsRepository
       .createQueryBuilder("review")
+      .withDeleted()
       .innerJoin("review.post", "post")
-      .leftJoin("review.reviewer", "reviewer")
+      .leftJoin("review.reviewer", "reviewer", "reviewer.deleted_at IS NULL")
       .addSelect(["reviewer.id", "reviewer.fullName", "reviewer.avatarUrl"])
       .where("post.sellerId = :sellerId", { sellerId })
       .andWhere("review.deleted_at IS NULL")
-      .andWhere("post.deleted_at IS NULL")
       .andWhere("post.status IN (:...statuses)", {
         statuses: [PostStatus.ACTIVE, PostStatus.SOLD],
       })

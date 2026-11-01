@@ -1,3 +1,4 @@
+import { assertIndependentMigrationRollback } from "../schema/unify-post-promotions";
 import { MigrationInterface, QueryRunner } from "typeorm";
 
 export class PostLifecycle1791810000000 implements MigrationInterface {
@@ -22,12 +23,28 @@ export class PostLifecycle1791810000000 implements MigrationInterface {
     await runner.query(
       `ALTER TYPE "${schema}"."notifications_type_enum" ADD VALUE IF NOT EXISTS 'post_expired'`,
     );
-    // Existing active listings receive a full grace period, without rewriting created_at.
+    // Another branch may already own expires_at. Preserve every known deadline;
+    // only legacy rows without one receive the agreed 14-day grace period.
     await runner.query(`ALTER TABLE "${schema}".posts
-      ADD COLUMN published_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      ADD COLUMN expires_at timestamptz NOT NULL DEFAULT (now() + interval '336 hours'),
-      ADD COLUMN renewal_count integer NOT NULL DEFAULT 0,
-      ADD CONSTRAINT chk_posts_lifetime CHECK (expires_at > published_at AND renewal_count >= 0)`);
+      ADD COLUMN IF NOT EXISTS published_at timestamptz,
+      ADD COLUMN IF NOT EXISTS expires_at timestamptz,
+      ADD COLUMN IF NOT EXISTS renewal_count integer DEFAULT 0`);
+    await runner.query(`UPDATE "${schema}".posts SET
+      published_at = COALESCE(published_at, CASE WHEN expires_at IS NULL THEN CURRENT_TIMESTAMP ELSE LEAST(CURRENT_TIMESTAMP, expires_at - interval '336 hours') END),
+      expires_at = COALESCE(expires_at, COALESCE(published_at, CURRENT_TIMESTAMP) + interval '336 hours'),
+      renewal_count = COALESCE(renewal_count, 0)
+      WHERE published_at IS NULL OR expires_at IS NULL OR renewal_count IS NULL`);
+    await runner.query(`ALTER TABLE "${schema}".posts
+      ALTER COLUMN published_at SET DEFAULT CURRENT_TIMESTAMP,
+      ALTER COLUMN published_at SET NOT NULL,
+      ALTER COLUMN expires_at SET DEFAULT (now() + interval '336 hours'),
+      ALTER COLUMN expires_at SET NOT NULL,
+      ALTER COLUMN renewal_count SET DEFAULT 0,
+      ALTER COLUMN renewal_count SET NOT NULL,
+      DROP CONSTRAINT IF EXISTS chk_posts_lifetime`);
+    await runner.query(
+      `ALTER TABLE "${schema}".posts ADD CONSTRAINT chk_posts_lifetime CHECK (expires_at > published_at AND renewal_count >= 0)`,
+    );
     // Text comparisons permit using the new enum label in a transactional migration.
     await runner.query(
       `ALTER TABLE "${schema}".posts DROP CONSTRAINT IF EXISTS chk_posts_transaction_state`,
@@ -39,12 +56,12 @@ export class PostLifecycle1791810000000 implements MigrationInterface {
         OR (status::text = 'hidden' AND (sold_at IS NOT NULL OR buyer_id IS NULL))
       ))`);
     await runner.query(
-      `CREATE INDEX idx_posts_seller_status_expires ON "${schema}".posts (seller_id, status, expires_at) WHERE deleted_at IS NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_posts_seller_status_expires ON "${schema}".posts (seller_id, status, expires_at) WHERE deleted_at IS NULL`,
     );
     await runner.query(
-      `CREATE INDEX idx_posts_status_expires ON "${schema}".posts (status, expires_at) WHERE deleted_at IS NULL`,
+      `CREATE INDEX IF NOT EXISTS idx_posts_status_expires ON "${schema}".posts (status, expires_at) WHERE deleted_at IS NULL`,
     );
-    await runner.query(`CREATE TABLE "${schema}".post_renewals (
+    await runner.query(`CREATE TABLE IF NOT EXISTS "${schema}".post_renewals (
       id uuid PRIMARY KEY,
       post_id uuid NOT NULL REFERENCES "${schema}".posts(id) ON DELETE RESTRICT,
       renewal_number integer NOT NULL,
@@ -61,19 +78,20 @@ export class PostLifecycle1791810000000 implements MigrationInterface {
       )
     )`);
     await runner.query(
-      `CREATE UNIQUE INDEX uq_post_renewals_cycle ON "${schema}".post_renewals (post_id, renewal_number)`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS uq_post_renewals_cycle ON "${schema}".post_renewals (post_id, renewal_number)`,
     );
     await runner.query(
-      `CREATE UNIQUE INDEX uq_post_renewals_payment ON "${schema}".post_renewals (payment_reference) WHERE payment_reference IS NOT NULL`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS uq_post_renewals_payment ON "${schema}".post_renewals (payment_reference) WHERE payment_reference IS NOT NULL`,
     );
     await runner.query(`ALTER TABLE "${schema}".notifications
-      ADD COLUMN target_type varchar(30), ADD COLUMN dedup_key varchar(200)`);
+      ADD COLUMN IF NOT EXISTS target_type varchar(30), ADD COLUMN IF NOT EXISTS dedup_key varchar(200)`);
     await runner.query(
-      `CREATE UNIQUE INDEX uq_notifications_dedup_key ON "${schema}".notifications (dedup_key) WHERE dedup_key IS NOT NULL`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS uq_notifications_dedup_key ON "${schema}".notifications (dedup_key) WHERE dedup_key IS NOT NULL`,
     );
   }
 
   async down(runner: QueryRunner): Promise<void> {
+    await assertIndependentMigrationRollback(runner, this.name);
     const schema = this.schema(runner);
     // Old code has no expired status; restore its original active-state semantics.
     await runner.query(

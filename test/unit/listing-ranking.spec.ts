@@ -103,7 +103,7 @@ describe("reputation subquery", () => {
     expect(sql).toContain('"app_schema"."reviews"');
     expect(sql).toContain('"app_schema"."posts"');
     expect(sql).toContain("review.deleted_at IS NULL");
-    expect(sql).toContain("eligible_post.deleted_at IS NULL");
+    expect(sql).not.toContain("eligible_post.deleted_at IS NULL");
     expect(sql).toContain("eligible_post.status IN ('active', 'sold')");
     expect(sql).toContain("ROUND(AVG(review.rating)::numeric, 1)");
     expect(sql).toContain("GROUP BY eligible_post.seller_id");

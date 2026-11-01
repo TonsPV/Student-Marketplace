@@ -41,6 +41,8 @@ export async function sellerStatistics(
     dataSource
       .getRepository(ReviewEntity)
       .createQueryBuilder("review")
+      // A seller deleting a listing must not erase its verified reviews.
+      .withDeleted()
       .innerJoin(
         PostEntity,
         "post",
@@ -48,7 +50,6 @@ export async function sellerStatistics(
         { sellerId },
       )
       .where("review.deleted_at IS NULL")
-      .andWhere("post.deleted_at IS NULL")
       .andWhere("post.status IN (:...statuses)", {
         statuses: [PostStatus.ACTIVE, PostStatus.SOLD],
       })
