@@ -35,7 +35,7 @@ export class SearchPostsDto {
     @ApiPropertyOptional({
         type: String,
         example: 'iphone',
-        description: 'All whitespace-separated keywords must appear in the title or description, in any order, ignoring case and Vietnamese accents. Typo matching is not supported.',
+        description: 'All whitespace-separated keywords must appear in the title, in any order, ignoring case and Vietnamese accents. Description is not searched. Typo matching is not supported.',
     })
     @IsOptional()
     @Transform(({ value }: { value: unknown }) =>

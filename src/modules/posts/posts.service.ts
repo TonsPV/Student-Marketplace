@@ -9,7 +9,6 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import {
-  Brackets,
   DataSource,
   EntityManager,
   IsNull,
@@ -252,18 +251,10 @@ export class PostsService {
       const keywords = [...new Set(q.trim().split(/\s+/).filter(Boolean))];
       keywords.forEach((keyword, index) => {
         const parameter = `keyword${index}`;
-        // Every token must match; each may occur in either field, in any order.
+        // Every token must occur in the title, in any order.
         queryBuilder.andWhere(
-          new Brackets((builder) => {
-            builder
-              .where(
-                `${normalize}(post.title) ILIKE ${normalize}(:${parameter})`,
-                { [parameter]: `%${keyword}%` },
-              )
-              .orWhere(
-                `${normalize}(post.description) ILIKE ${normalize}(:${parameter})`,
-              );
-          }),
+          `${normalize}(post.title) ILIKE ${normalize}(:${parameter})`,
+          { [parameter]: `%${keyword}%` },
         );
       });
     }
@@ -312,7 +303,10 @@ export class PostsService {
       `(SELECT MAX(pr."endsAt") FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP)`,
       "promoted_until",
     );
-    queryBuilder.addSelect(`CASE WHEN (SELECT COUNT(*) FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP)>0 THEN 1 ELSE 0 END`, "promotion_priority");
+    queryBuilder.addSelect(
+      `CASE WHEN (SELECT COUNT(*) FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP)>0 THEN 1 ELSE 0 END`,
+      "promotion_priority",
+    );
     const total = await queryBuilder.clone().getCount();
     const { entities, raw } = await queryBuilder
       .orderBy(

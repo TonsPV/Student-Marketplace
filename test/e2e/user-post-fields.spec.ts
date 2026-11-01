@@ -236,7 +236,6 @@ describe("university and locationName API contracts", () => {
     for (const q of [
       "dien thoai thu nghiem",
       "ĐIỆN THOẠI THỬ NGHIỆM",
-      "do dung con moi",
     ]) {
       const response = await http()
         .get("/api/v1/posts/search")
@@ -281,7 +280,7 @@ describe("university and locationName API contracts", () => {
         totalPages: 1,
       });
     }
-    for (const q of ["sach toan 9", "sach toann 3"]) {
+    for (const q of ["sach toan 9", "sach toann 3", "danh cho hoc sinh", "sach hoc sinh"]) {
       const response = await http()
         .get("/api/v1/posts/search")
         .query({ q, sellerId: owner.id, categoryId })
