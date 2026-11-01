@@ -1,0 +1,8 @@
+export enum ReputationLevel {
+  UNRATED = "UNRATED",
+  INSUFFICIENT_DATA = "INSUFFICIENT_DATA",
+  LOW = "LOW",
+  MEDIUM = "MEDIUM",
+  GOOD = "GOOD",
+  EXCELLENT = "EXCELLENT",
+}

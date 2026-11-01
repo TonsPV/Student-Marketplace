@@ -97,4 +97,15 @@ export class ReviewsController {
   ) {
     return this.reviewsService.remove(id, ctx);
   }
+
+  @Get("reviews/:id/history")
+  @CheckPolicies({ action: "read", subject: "Review" })
+  @ApiBearerAuth("access-token")
+  @ResponseMessage("Review edit history retrieved successfully!")
+  history(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.reviewsService.findHistory(id, ctx);
+  }
 }

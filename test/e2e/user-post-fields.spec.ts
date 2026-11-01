@@ -563,6 +563,13 @@ describe("university and locationName API contracts", () => {
         rating,
       });
     }
+    const deletedReview = await ds.getRepository(ReviewEntity).save({
+      id: randomUUID(),
+      postId: related.id,
+      reviewerId: outsider.id,
+      rating: 2,
+    });
+    await ds.getRepository(ReviewEntity).softDelete(deletedReview.id);
     const imageIds = [randomUUID(), randomUUID()].sort();
     for (const id of imageIds)
       await ds.getRepository(PostImageEntity).save({
@@ -579,8 +586,9 @@ describe("university and locationName API contracts", () => {
         expect(result.body.data.seller).toMatchObject({
           id: seller.id,
           university: seller.university,
-          ratingAverage: 4,
-          reviewCount: 3,
+          ratingAverage: 4.5,
+          reviewCount: 2,
+          reputationLevel: "INSUFFICIENT_DATA",
           soldCount: 1,
         });
         expect(result.body.data.seller.createdAt).toBeTruthy();
@@ -648,8 +656,108 @@ describe("university and locationName API contracts", () => {
     expect(noReviews.body.data.seller).toMatchObject({
       ratingAverage: null,
       reviewCount: 0,
+      reputationLevel: "UNRATED",
       soldCount: 0,
     });
+  });
+
+  it("enforces public review visibility for detail, post lists, seller lists, and aggregates", async () => {
+    const seller = await createTestUser(ds);
+    const [active, sold, hidden, deletedPost, deletedReviewPost] =
+      await Promise.all([
+        createTestPost(ds, seller.id, categoryId),
+        createTestPost(ds, seller.id, categoryId, { status: PostStatus.SOLD }),
+        createTestPost(ds, seller.id, categoryId, {
+          status: PostStatus.HIDDEN,
+        }),
+        createTestPost(ds, seller.id, categoryId, { status: PostStatus.SOLD }),
+        createTestPost(ds, seller.id, categoryId),
+      ]);
+    await ds.getRepository(PostEntity).softDelete(deletedPost.id);
+    const reviews = await Promise.all(
+      [
+        [active, 4],
+        [sold, 5],
+        [hidden, 3],
+        [deletedPost, 1],
+      ].map(async ([post, rating]) =>
+        ds.getRepository(ReviewEntity).save({
+          id: randomUUID(),
+          postId: (post as PostEntity).id,
+          reviewerId: outsider.id,
+          rating: rating as number,
+        }),
+      ),
+    );
+    const deletedReview = await ds.getRepository(ReviewEntity).save({
+      id: randomUUID(),
+      postId: deletedReviewPost.id,
+      reviewerId: admin.id,
+      rating: 2,
+    });
+    await ds.getRepository(ReviewEntity).softDelete(deletedReview.id);
+
+    const visibleIds = [reviews[0].id, reviews[1].id];
+    for (const [id, expected] of [
+      [reviews[0].id, 200],
+      [reviews[1].id, 200],
+      [reviews[2].id, 404],
+      [reviews[3].id, 404],
+      [deletedReview.id, 404],
+    ] as const) {
+      const response = await http()
+        .get(`/api/v1/reviews/${id}`)
+        .expect(expected);
+      if (expected === 200) {
+        expect(response.body.data.id).toBe(id);
+        expect(response.body.data).not.toHaveProperty("oldRating");
+        expect(response.body.data).not.toHaveProperty("newComment");
+      }
+    }
+
+    for (const [post, expectedIds, status] of [
+      [active, [reviews[0].id], 200],
+      [sold, [reviews[1].id], 200],
+      [hidden, [], 404],
+      [deletedPost, [], 404],
+      [deletedReviewPost, [], 200],
+    ] as const) {
+      const response = await http()
+        .get(`/api/v1/posts/${post.id}/reviews`)
+        .expect(status);
+      if (status === 200) {
+        expect(
+          response.body.data.items.map((item: ReviewEntity) => item.id),
+        ).toEqual(expectedIds);
+        expect(response.body.data.items).not.toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: hidden.id }),
+            expect.objectContaining({ id: deletedPost.id }),
+          ]),
+        );
+      }
+    }
+
+    const sellerReviews = await http()
+      .get(`/api/v1/users/${seller.id}/reviews`)
+      .expect(200);
+    const sellerReviewIds = sellerReviews.body.data.items.map(
+      (item: ReviewEntity) => item.id,
+    );
+    expect(sellerReviewIds).toHaveLength(2);
+    expect(sellerReviewIds).toEqual(expect.arrayContaining(visibleIds));
+    expect(sellerReviews.body.data.meta.total).toBe(2);
+
+    const profile = await http()
+      .get(`/api/v1/user/${seller.id}/public`)
+      .expect(200);
+    expect(profile.body.data).toMatchObject({
+      ratingAverage: 4.5,
+      reviewCount: 2,
+      reputationLevel: "INSUFFICIENT_DATA",
+    });
+
+    await http().get("/api/v1/reviews/").expect(404);
   });
 
   it("serves public profiles and active/sold posts without private account data", async () => {
@@ -698,8 +806,9 @@ describe("university and locationName API contracts", () => {
         id: seller.id,
         fullName: seller.fullName,
         university: "UIT",
-        ratingAverage: 4,
-        reviewCount: 3,
+        ratingAverage: 4.5,
+        reviewCount: 2,
+        reputationLevel: "INSUFFICIENT_DATA",
         activeCount: 1,
         soldCount: 1,
       });
@@ -771,6 +880,7 @@ describe("university and locationName API contracts", () => {
     ).toMatchObject({
       ratingAverage: null,
       reviewCount: 0,
+      reputationLevel: "UNRATED",
       activeCount: 0,
       soldCount: 0,
     });
