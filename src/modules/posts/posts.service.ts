@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   InternalServerErrorException,
   Injectable,
   Logger,
@@ -46,6 +47,10 @@ import { MarkPostSoldDto } from "./dto/mark-post-sold.dto";
 import { PurchaseReviewStatus } from "./dto/purchased-post-response.dto";
 import { sellerStatistics } from "../reviews/seller-statistics";
 import { PostImageEntity } from "../post-images/post-image.entity";
+import {
+  ModerationService,
+  POSTING_ISOLATION,
+} from "../moderation/moderation.service";
 
 @Injectable()
 export class PostsService {
@@ -59,6 +64,7 @@ export class PostsService {
     private readonly authorization: AuthorizationService,
     private readonly dataSource: DataSource,
     private readonly storage: StorageService,
+    private readonly moderation: ModerationService,
     @InjectRepository(ConversationEntity)
     @Optional()
     private readonly conversationsRepository?: Repository<ConversationEntity>,
@@ -73,6 +79,20 @@ export class PostsService {
   ) {}
 
   async create(dto: CreatePostDto, context: AuthenticatedContext) {
+    return this.dataSource.transaction(POSTING_ISOLATION, (manager) =>
+      this.createWithManager(manager, dto, context),
+    );
+  }
+
+  /**
+   * Runs inside the caller's READ COMMITTED transaction. Lock order:
+   * seller User row (shared posting lock) → then the new Post row.
+   */
+  async createWithManager(
+    manager: EntityManager,
+    dto: CreatePostDto,
+    context: AuthenticatedContext,
+  ) {
     this.authorization.assertCreate(context, "Post", {
       sellerId: context.principal.id,
     });
@@ -89,9 +109,12 @@ export class PostsService {
     if (Object.keys(input).some((field) => !fields.has(field))) {
       throw new BadRequestException("Unknown post field");
     }
-    await this.ensureCategoryExists(dto.categoryId);
+    // Posting restriction (not account lock): blocks only new posts.
+    await this.moderation.lockAndAssertCanPost(manager, context.principal.id);
+    await this.ensureCategoryExists(dto.categoryId, manager);
 
-    const post = this.postsRepository.create({
+    const repo = manager.getRepository(PostEntity);
+    const post = repo.create({
       categoryId: dto.categoryId,
       title: dto.title,
       description: dto.description,
@@ -102,7 +125,7 @@ export class PostsService {
       sellerId: context.principal.id,
     });
 
-    return this.toResponse(await this.postsRepository.save(post));
+    return this.toResponse(await repo.save(post));
   }
 
   async findAll(query: FindPostsDto, context: AuthorizationContext) {
@@ -761,15 +784,23 @@ export class PostsService {
   }
 
   async restore(id: string, context: AuthenticatedContext) {
-    return this.dataSource.transaction(async (manager) => {
-      const repo = manager.getRepository(PostEntity);
-      const post = await repo
-        .createQueryBuilder("post")
-        .withDeleted()
-        .setLock("pessimistic_write")
-        .where("post.id = :id", { id })
-        .getOne();
-      if (!post) throw new NotFoundException("Post not found");
+    return this.dataSource.transaction(POSTING_ISOLATION, (manager) =>
+      this.restoreWithManager(manager, id, context),
+    );
+  }
+
+  /**
+   * Lock order User → Post, the same as create. The seller id is read
+   * without a lock first (it never changes) so the seller row can be locked
+   * before the post row; it is re-checked after both locks are held.
+   */
+  async restoreWithManager(
+    manager: EntityManager,
+    id: string,
+    context: AuthenticatedContext,
+  ) {
+    const repo = manager.getRepository(PostEntity);
+    const assertCanRestore = (post: PostEntity) =>
       this.authorization.assertResource(
         context,
         "restore",
@@ -781,12 +812,33 @@ export class PostsService {
           deletedAt: post.deletedAt,
         }) as unknown as Record<string, unknown>,
       );
-      if (!post.deletedAt) {
-        return this.toResponse(post);
-      }
-      await repo.restore(id);
-      return this.toResponse(await repo.findOneByOrFail({ id }));
-    });
+    const unlocked = await repo.findOne({ where: { id }, withDeleted: true });
+    if (!unlocked) throw new NotFoundException("Post not found");
+    // Reject outsiders before taking any lock on someone else's rows.
+    assertCanRestore(unlocked);
+    if (!unlocked.deletedAt) return this.toResponse(unlocked);
+
+    // Restoring puts a listing back on the marketplace: the seller's
+    // restriction applies, checked at the instant the user lock is granted.
+    const now = await this.moderation.lockPostingUser(
+      manager,
+      unlocked.sellerId,
+    );
+    const post = await repo
+      .createQueryBuilder("post")
+      .withDeleted()
+      .setLock("pessimistic_write")
+      .where("post.id = :id", { id })
+      .getOne();
+    if (!post) throw new NotFoundException("Post not found");
+    if (post.sellerId !== unlocked.sellerId) {
+      throw new ConflictException("Post owner changed");
+    }
+    assertCanRestore(post);
+    if (!post.deletedAt) return this.toResponse(post);
+    await this.moderation.assertCanPost(manager, post.sellerId, now);
+    await repo.restore(id);
+    return this.toResponse(await repo.findOneByOrFail({ id }));
   }
 
   async getOwnedPost(

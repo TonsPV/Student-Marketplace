@@ -122,6 +122,8 @@ export class AuthorizationService {
       | "Favorite"
       | "Conversation"
       | "Upload"
+      | "UserWarning"
+      | "PostingRestriction"
     >,
   >(
     context: AuthorizationContext,

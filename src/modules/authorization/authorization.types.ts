@@ -8,6 +8,8 @@ import type {
   FavoriteProjection,
   ConversationProjection,
   NotificationProjection,
+  UserWarningProjection,
+  PostingRestrictionProjection,
 } from "./subject-projections";
 
 export type PostAction =
@@ -42,6 +44,8 @@ export type ConversationAction =
   | "type";
 export type NotificationAction = "read" | "markRead";
 export type UploadAction = "create";
+export type UserWarningAction = "create" | "read";
+export type PostingRestrictionAction = "create" | "read" | "lift";
 
 export type AppAbilities =
   | [PostAction, "Post"]
@@ -52,7 +56,9 @@ export type AppAbilities =
   | [FavoriteAction, "Favorite"]
   | [ConversationAction, "Conversation"]
   | [NotificationAction, "Notification"]
-  | [UploadAction, "Upload"];
+  | [UploadAction, "Upload"]
+  | [UserWarningAction, "UserWarning"]
+  | [PostingRestrictionAction, "PostingRestriction"];
 
 export type SubjectName = AppAbilities[1];
 export type ActionFor<S extends SubjectName> = Extract<
@@ -69,6 +75,8 @@ type SubjectFields = {
   Conversation: ConversationProjection;
   Notification: NotificationProjection;
   Upload: { ownerId: string; purpose: string };
+  UserWarning: UserWarningProjection;
+  PostingRestriction: PostingRestrictionProjection;
 };
 export type AppAbility = MongoAbility<
   {
@@ -114,6 +122,8 @@ export const ACTIONS_BY_SUBJECT = {
   ],
   Notification: ["read", "markRead"],
   Upload: ["create"],
+  UserWarning: ["create", "read"],
+  PostingRestriction: ["create", "read", "lift"],
 } as const satisfies { [S in SubjectName]: readonly ActionFor<S>[] };
 
 export interface AuthenticatedPrincipal {

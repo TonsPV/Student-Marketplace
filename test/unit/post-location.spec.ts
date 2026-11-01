@@ -13,6 +13,13 @@ import {
 } from "../../src/modules/posts/post.entity";
 import { PostsService } from "../../src/modules/posts/posts.service";
 import { StorageService } from "../../src/modules/storage/storage.service";
+import { ModerationService } from "../../src/modules/moderation/moderation.service";
+
+const allowPosting = {
+  lockPostingUser: jest.fn().mockResolvedValue(new Date()),
+  assertCanPost: jest.fn().mockResolvedValue(undefined),
+  lockAndAssertCanPost: jest.fn().mockResolvedValue(undefined),
+} as unknown as ModerationService;
 
 const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const categoryId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -63,6 +70,8 @@ describe("post location API contract", () => {
       createQueryBuilder: jest.fn().mockReturnValue(query),
       restore: jest.fn(),
       findOneByOrFail: jest.fn().mockImplementation(async () => post),
+      findOne: jest.fn().mockImplementation(async () => post),
+      findOneBy: jest.fn().mockResolvedValue({ id: categoryId }),
     };
     service = new PostsService(
       repo as unknown as Repository<PostEntity>,
@@ -86,10 +95,14 @@ describe("post location API contract", () => {
             return images;
           },
         }),
-        transaction: async (fn: (manager: unknown) => unknown) =>
-          fn({ getRepository: () => repo }),
+        // Supports both transaction(fn) and transaction(isolation, fn).
+        transaction: async (...args: unknown[]) =>
+          (args[args.length - 1] as (manager: unknown) => unknown)({
+            getRepository: () => repo,
+          }),
       } as unknown as DataSource,
       {} as StorageService,
+      allowPosting,
     );
   });
 

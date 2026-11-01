@@ -9,6 +9,7 @@ import { PostEntity, PostStatus } from "../../src/modules/posts/post.entity";
 import { PostsService } from "../../src/modules/posts/posts.service";
 import { ReviewEntity } from "../../src/modules/reviews/review.entity";
 import { StorageService } from "../../src/modules/storage/storage.service";
+import { ModerationService } from "../../src/modules/moderation/moderation.service";
 
 // F2-01 regression (audit): merge 19a695c dropped `avatarStorageKey` from the
 // `seller` select of PostsService.findPurchased (present in BOTH parents), so
@@ -80,6 +81,7 @@ describe("purchased posts seller avatar (F2-01 regression)", () => {
       authorization,
       dataSource as unknown as DataSource,
       storage as unknown as StorageService,
+      {} as ModerationService,
       {} as Repository<ConversationEntity>,
       {} as Repository<MessageEntity>,
       reviewRepository as unknown as Repository<ReviewEntity>,

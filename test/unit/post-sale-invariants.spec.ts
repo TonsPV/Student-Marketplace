@@ -11,6 +11,7 @@ import { PostEntity, PostStatus } from "../../src/modules/posts/post.entity";
 import { PostsService } from "../../src/modules/posts/posts.service";
 import { ReviewEntity } from "../../src/modules/reviews/review.entity";
 import { StorageService } from "../../src/modules/storage/storage.service";
+import { ModerationService } from "../../src/modules/moderation/moderation.service";
 import { RealtimeService } from "../../src/modules/realtime/realtime.service";
 import { WS_EVENTS } from "../../src/modules/realtime/realtime.events";
 
@@ -91,6 +92,7 @@ describe("post sale invariants", () => {
       authorization,
       dataSource as unknown as DataSource,
       {} as StorageService,
+      {} as ModerationService,
       conversationRepository as unknown as Repository<ConversationEntity>,
       {} as Repository<MessageEntity>,
       reviewRepository as unknown as Repository<ReviewEntity>,

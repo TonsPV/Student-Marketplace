@@ -7,6 +7,7 @@ import { PostEntity, PostStatus } from "../../src/modules/posts/post.entity";
 import { PostsService } from "../../src/modules/posts/posts.service";
 import { PostImageEntity } from "../../src/modules/post-images/post-image.entity";
 import { StorageService } from "../../src/modules/storage/storage.service";
+import { ModerationService } from "../../src/modules/moderation/moderation.service";
 
 describe("post list covers", () => {
   const authorization = new AuthorizationService(new CaslAbilityFactory());
@@ -65,6 +66,7 @@ describe("post list covers", () => {
       authorization,
       { getRepository } as unknown as DataSource,
       { presignGet } as unknown as StorageService,
+      {} as ModerationService,
     );
   });
 

@@ -12,6 +12,7 @@ import { ReviewEntity } from "../reviews/review.entity";
 import { NotificationEntity } from "../notifications/notification.entity";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { RealtimeModule } from "../realtime/realtime.module";
+import { ModerationModule } from "../moderation/moderation.module";
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { RealtimeModule } from "../realtime/realtime.module";
     StorageModule,
     NotificationsModule,
     RealtimeModule,
+    ModerationModule,
   ],
   controllers: [PostsController],
   providers: [PostsService],

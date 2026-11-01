@@ -25,6 +25,7 @@ import {
   NotificationType,
 } from "../../src/modules/notifications/notification.entity";
 import { StorageService } from "../../src/modules/storage/storage.service";
+import { ModerationService } from "../../src/modules/moderation/moderation.service";
 import { RealtimeService } from "../../src/modules/realtime/realtime.service";
 import { WS_EVENTS } from "../../src/modules/realtime/realtime.events";
 
@@ -96,6 +97,7 @@ function createHarness(options: {
     } as unknown as AuthorizationService,
     { transaction } as unknown as DataSource,
     {} as unknown as StorageService,
+    {} as unknown as ModerationService,
     {} as unknown as Repository<ConversationEntity>,
     {} as unknown as Repository<MessageEntity>,
     {} as unknown as Repository<ReviewEntity>,
