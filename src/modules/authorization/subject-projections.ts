@@ -53,6 +53,21 @@ export interface NotificationProjection {
   userId: string;
 }
 
+export interface UserWarningProjection {
+  id: string;
+  userId: string;
+}
+
+export interface PostingRestrictionProjection {
+  id: string;
+  userId: string;
+}
+
+export interface PostPromotionProjection {
+  id: string;
+  postId: string;
+}
+
 function assertUuid(value: unknown, field: string): string {
   if (typeof value !== "string" || !isUuid(value)) {
     throw new InternalServerErrorException(
@@ -330,6 +345,17 @@ export function normalizeResourceProjection(
           user_id: raw.user_id,
         }),
       };
+    case "UserWarning":
+    case "PostingRestriction":
+      return {
+        id: assertUuid(id, `${name}.id`),
+        userId: assertUuid(raw.userId ?? raw.user_id, `${name}.userId`),
+      };
+    case "PostPromotion":
+      return {
+        id: assertUuid(id, `${name}.id`),
+        postId: assertUuid(raw.postId ?? raw.post_id, `${name}.postId`),
+      };
     case "Category":
       return { id: assertUuid(id, "Category.id") };
     default:
@@ -387,6 +413,11 @@ export function normalizeCreateCandidate(
         ownerId: assertUuid(raw.ownerId, "Upload.ownerId"),
         purpose: raw.purpose,
       };
+    case "UserWarning":
+    case "PostingRestriction":
+      return { userId: assertUuid(raw.userId, `${name}.userId`) };
+    case "PostPromotion":
+      return { postId: assertUuid(raw.postId, "PostPromotion.postId") };
     default:
       throw new InternalServerErrorException("Unknown create subject");
   }

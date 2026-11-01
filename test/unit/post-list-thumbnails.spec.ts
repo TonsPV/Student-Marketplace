@@ -7,6 +7,7 @@ import { PostEntity, PostStatus } from "../../src/modules/posts/post.entity";
 import { PostsService } from "../../src/modules/posts/posts.service";
 import { PostImageEntity } from "../../src/modules/post-images/post-image.entity";
 import { StorageService } from "../../src/modules/storage/storage.service";
+import { ModerationService } from "../../src/modules/moderation/moderation.service";
 
 describe("post list covers", () => {
   const authorization = new AuthorizationService(new CaslAbilityFactory());
@@ -51,6 +52,27 @@ describe("post list covers", () => {
     getRepository = jest
       .fn()
       .mockReturnValue({ createQueryBuilder: () => query });
+    // Phase 4: findAll always runs the unified QueryBuilder listing path
+    // (the legacy findAndCount branch was removed), so the posts repository
+    // needs a chainable builder stub alongside findAndCount.
+    const builder: Record<string, jest.Mock> = {};
+    for (const method of [
+      "where",
+      "andWhere",
+      "leftJoin",
+      "addSelect",
+      "orderBy",
+      "addOrderBy",
+      "skip",
+      "take",
+    ])
+      builder[method] = jest.fn().mockReturnValue(builder);
+    builder.clone = jest.fn(() => builder);
+    builder.getCount = jest.fn(async () => posts.length);
+    builder.getRawAndEntities = jest.fn(async () => ({
+      entities: posts,
+      raw: posts.map(() => ({})),
+    }));
     presignGet = jest.fn().mockResolvedValue({
       url: "https://example.test/signed.jpg?signature=cover",
       expiresAt: "2026-10-18T00:00:00Z",
@@ -60,11 +82,13 @@ describe("post list covers", () => {
         findAndCount: jest
           .fn()
           .mockImplementation(async () => [posts, posts.length]),
+        createQueryBuilder: jest.fn().mockReturnValue(builder),
       } as unknown as Repository<PostEntity>,
       {} as Repository<CategoryEntity>,
       authorization,
       { getRepository } as unknown as DataSource,
       { presignGet } as unknown as StorageService,
+      {} as ModerationService,
     );
   });
 

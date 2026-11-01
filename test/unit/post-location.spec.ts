@@ -13,7 +13,13 @@ import {
 } from "../../src/modules/posts/post.entity";
 import { PostsService } from "../../src/modules/posts/posts.service";
 import { StorageService } from "../../src/modules/storage/storage.service";
-import { UserEntity } from "../../src/modules/user/user.entity";
+import { ModerationService } from "../../src/modules/moderation/moderation.service";
+
+const allowPosting = {
+  lockPostingUser: jest.fn().mockResolvedValue(new Date()),
+  assertCanPost: jest.fn().mockResolvedValue(undefined),
+  lockAndAssertCanPost: jest.fn().mockResolvedValue(undefined),
+} as unknown as ModerationService;
 
 const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const categoryId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -51,11 +57,29 @@ describe("post location API contract", () => {
       deletedAt: null,
       location: { type: "Point", coordinates: [106.7009, 10.7769] },
     });
-    const query: Record<string, jest.Mock> = {};
-    for (const method of ["setLock", "where", "withDeleted"])
-      query[method] = jest.fn().mockReturnValue(query);
-    query.getOne = jest.fn().mockImplementation(async () => post);
-    query.getOneOrFail = jest.fn().mockImplementation(async () => post);
+    // Universal chainable QueryBuilder stub: the Phase 4 listing path
+    // (findAll) and the transaction flows (update/markAsSold/restore) share
+    // this repository mock, so every chained method must return the builder.
+    const query: Record<string, jest.Mock> = new Proxy(
+      {} as Record<string, jest.Mock>,
+      {
+        get(target, prop: string) {
+          if (prop === "getOne")
+            return (target[prop] ??= jest
+              .fn()
+              .mockImplementation(async () => post));
+          if (prop === "getCount")
+            return (target[prop] ??= jest.fn(async () => 1));
+          if (prop === "getRawAndEntities")
+            return (target[prop] ??= jest.fn(
+              async () => ({ entities: [post], raw: [{}] }) as unknown,
+            ));
+          if (prop === "clone")
+            return (target[prop] ??= jest.fn(() => query));
+          return (target[prop] ??= jest.fn().mockReturnValue(query));
+        },
+      },
+    );
     repo = {
       create: jest
         .fn()
@@ -64,9 +88,10 @@ describe("post location API contract", () => {
       findAndCount: jest.fn().mockImplementation(async () => [[post], 1]),
       createQueryBuilder: jest.fn().mockReturnValue(query),
       restore: jest.fn(),
-      countBy: jest.fn().mockResolvedValue(0),
-      findOne: jest.fn().mockImplementation(async () => post),
+      update: jest.fn(async () => ({})),
       findOneByOrFail: jest.fn().mockImplementation(async () => post),
+      findOne: jest.fn().mockImplementation(async () => post),
+      findOneBy: jest.fn().mockResolvedValue({ id: categoryId }),
     };
     service = new PostsService(
       repo as unknown as Repository<PostEntity>,
@@ -91,29 +116,14 @@ describe("post location API contract", () => {
             return images;
           },
         }),
-        transaction: async (
-          fnOrIsolation: string | ((manager: unknown) => unknown),
-          work?: (manager: unknown) => unknown,
-        ) =>
-          (work ?? (fnOrIsolation as (manager: unknown) => unknown))({
-            query: async () => [{ now: new Date() }],
-            getRepository: (entity: unknown) =>
-              entity === UserEntity
-                ? {
-                    createQueryBuilder: () => ({
-                      setLock: () => ({
-                        where: () => ({
-                          getOne: async () => ({ id, isLocked: false }),
-                        }),
-                      }),
-                    }),
-                  }
-                : entity === CategoryEntity
-                  ? { findOneBy: async () => ({ id: categoryId }) }
-                  : repo,
+        // Supports both transaction(fn) and transaction(isolation, fn).
+        transaction: async (...args: unknown[]) =>
+          (args[args.length - 1] as (manager: unknown) => unknown)({
+            getRepository: () => repo,
           }),
       } as unknown as DataSource,
       {} as StorageService,
+      allowPosting,
     );
   });
 

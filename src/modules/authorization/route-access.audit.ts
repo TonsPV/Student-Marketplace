@@ -15,6 +15,9 @@ const VALID_SUBJECTS = new Set([
   "Conversation",
   "Notification",
   "Upload",
+  "UserWarning",
+  "PostingRestriction",
+  "PostPromotion",
 ]);
 
 export function auditRouteAccess(

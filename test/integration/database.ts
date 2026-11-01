@@ -18,7 +18,11 @@ import { RefreshTokenEntity } from "../../src/modules/refresh-token/refresh-toke
 import { ReportEntity } from "../../src/modules/reports/report.entity";
 import { FavoriteEntity } from "../../src/modules/favorites/favorite.entity";
 import { ReviewEntity } from "../../src/modules/reviews/review.entity";
+import { ReviewEditHistoryEntity } from "../../src/modules/reviews/review-edit-history.entity";
 import { PasswordResetChallengeEntity } from "../../src/modules/auth/password-reset-challenge.entity";
+import { UserWarningEntity } from "../../src/modules/moderation/user-warning.entity";
+import { PostingRestrictionEntity } from "../../src/modules/moderation/posting-restriction.entity";
+import { PostPromotionEntity } from "../../src/modules/posts/post-promotion.entity";
 import { PostSearchUnaccent1791760000000 } from "../../src/database/migrations/1791760000000-PostSearchUnaccent";
 
 const ownedSchemas = new Set<string>();
@@ -68,10 +72,14 @@ export function createTestDataSource(): DataSource {
       ReportEntity,
       FavoriteEntity,
       ReviewEntity,
+      ReviewEditHistoryEntity,
       ConversationEntity,
       MessageEntity,
       MessageImageEntity,
       NotificationEntity,
+      UserWarningEntity,
+      PostingRestrictionEntity,
+      PostPromotionEntity,
     ],
   });
 }

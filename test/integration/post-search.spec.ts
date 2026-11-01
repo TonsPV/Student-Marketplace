@@ -8,6 +8,7 @@ import { PostEntity, PostStatus } from "../../src/modules/posts/post.entity";
 import { PostsService } from "../../src/modules/posts/posts.service";
 import { StorageService } from "../../src/modules/storage/storage.service";
 import { PostImageEntity } from "../../src/modules/post-images/post-image.entity";
+import { ModerationService } from "../../src/modules/moderation/moderation.service";
 import {
   createTestDataSource,
   initializeTestDatabase,
@@ -35,6 +36,7 @@ describe("accent-insensitive post search", () => {
       authorization,
       ds,
       {} as StorageService,
+      new ModerationService(ds, authorization),
     );
     const seller = await createTestUser(ds);
     const otherSeller = await createTestUser(ds);

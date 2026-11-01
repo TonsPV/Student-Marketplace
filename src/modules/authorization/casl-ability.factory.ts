@@ -8,6 +8,8 @@ import { defineReportRules } from "./policies/report.policy";
 import { defineReviewRules } from "./policies/review.policy";
 import { defineConversationRules } from "./policies/conversation.policy";
 import { definePersonalResourceRules } from "./policies/personal-resource.policy";
+import { defineModerationRules } from "./policies/moderation.policy";
+import { definePostPromotionRules } from "./policies/post-promotion.policy";
 
 @Injectable()
 export class CaslAbilityFactory {
@@ -20,6 +22,8 @@ export class CaslAbilityFactory {
     defineReviewRules(can, actor);
     defineConversationRules(can, actor);
     definePersonalResourceRules(can, actor);
+    defineModerationRules(can, actor);
+    definePostPromotionRules(can, actor);
     return build();
   }
 }
