@@ -1,3 +1,5 @@
+import { PaymentOrder, PaymentRequest } from "../../src/modules/payments/payment.entity";
+import { Promotion } from "../../src/modules/promotions/promotion.entity";
 import "reflect-metadata";
 import { config } from "dotenv";
 import { DataSource } from "typeorm";
@@ -8,6 +10,7 @@ import { MessageEntity } from "../../src/modules/messages/entities/message.entit
 import { MessageImageEntity } from "../../src/modules/messages/entities/message-image.entity";
 import { NotificationEntity } from "../../src/modules/notifications/notification.entity";
 import { PostEntity } from "../../src/modules/posts/post.entity";
+import { PostRenewalEntity } from "../../src/modules/posts/post-renewal.entity";
 import { PostImageEntity } from "../../src/modules/post-images/post-image.entity";
 import { UserEntity } from "../../src/modules/user/user.entity";
 import { CategoryEntity } from "../../src/modules/categories/category.entity";
@@ -56,10 +59,14 @@ export function createTestDataSource(): DataSource {
   return new DataSource({
     ...databaseOptions({ ...testDatabaseEnv(), POSTGRES_SCHEMA: schema }),
     entities: [
+      PaymentOrder,
+      PaymentRequest,
+      Promotion,
       UserEntity,
       PasswordResetChallengeEntity,
       CategoryEntity,
       PostEntity,
+      PostRenewalEntity,
       PostImageEntity,
       RefreshTokenEntity,
       ReportEntity,

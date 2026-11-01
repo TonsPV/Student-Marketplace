@@ -29,6 +29,7 @@ import { SearchPostsDto } from "./dto/search-posts.dto";
 import { UpdatePostDto } from "./dto/update-post.dto";
 import { MarkPostSoldDto } from "./dto/mark-post-sold.dto";
 import { PostsService } from "./posts.service";
+import { PaginationDto } from "../../common/dto/pagination.dto";
 
 @ApiTags("posts")
 @Controller("posts")
@@ -76,6 +77,44 @@ export class PostsController {
     @GetAuthorizationContext() ctx: AuthorizationContext,
   ) {
     return this.postsService.search(query, ctx);
+  }
+
+  @Get("me/quota")
+  @CheckPolicies({ action: "create", subject: "Post" })
+  @ApiBearerAuth("access-token")
+  quota(@GetAuthorizationContext() ctx: AuthenticatedContext) {
+    return this.postsService.quota(ctx);
+  }
+
+  @Get("me/:id")
+  @CheckPolicies({ action: "read", subject: "Post" })
+  @ApiBearerAuth("access-token")
+  findMyPost(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.postsService.findMyPost(id, ctx);
+  }
+
+  @Post(":id/renew")
+  @CheckPolicies({ action: "renew", subject: "Post" })
+  @ApiBearerAuth("access-token")
+  renew(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.postsService.renew(id, ctx);
+  }
+
+  @Get(":id/renewals")
+  @CheckPolicies({ action: "read", subject: "Post" })
+  @ApiBearerAuth("access-token")
+  renewalHistory(
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+    @Query() query: PaginationDto,
+  ) {
+    return this.postsService.renewalHistory(id, ctx, query);
   }
 
   @Patch(":id")

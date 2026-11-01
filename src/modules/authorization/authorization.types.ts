@@ -20,6 +20,7 @@ export type PostAction =
   | "markSold"
   | "delete"
   | "restore"
+  | "renew"
   | "manageImages"
   | "hide";
 export type CategoryAction = "create" | "read" | "update" | "delete";
@@ -98,6 +99,7 @@ export const ACTIONS_BY_SUBJECT = {
     "markSold",
     "delete",
     "restore",
+    "renew",
     "manageImages",
     "hide",
   ],

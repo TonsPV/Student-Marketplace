@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import { DataSource, In } from "typeorm";
+import { DataSource, Raw } from "typeorm";
 import { UserEntity } from "./user.entity";
 import { PostEntity, PostStatus } from "../posts/post.entity";
 import { resolveAvatar } from "../storage/avatar-response";
@@ -60,10 +60,16 @@ export class PublicUserService {
     const [items, total] = await this.dataSource
       .getRepository(PostEntity)
       .findAndCount({
-        where: {
+        where: (query.status
+          ? [query.status]
+          : [PostStatus.ACTIVE, PostStatus.SOLD]
+        ).map((status) => ({
           sellerId: id,
-          status: query.status ?? In([PostStatus.ACTIVE, PostStatus.SOLD]),
-        },
+          status,
+          ...(status === PostStatus.ACTIVE
+            ? { expiresAt: Raw((alias) => `${alias} > statement_timestamp()`) }
+            : {}),
+        })),
         relations: { category: true },
         select: { category: { id: true, name: true } },
         order: { createdAt: "DESC", id: "DESC" },

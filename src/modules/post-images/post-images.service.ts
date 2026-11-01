@@ -79,7 +79,7 @@ export class PostImagesService {
   }
 
   async findAll(postId: string, context: AuthorizationContext) {
-    const post = await this.postsService.getReadablePost(postId);
+    const post = await this.postsService.getReadablePost(postId, context);
     {
       this.authorization.assertResource(
         context,
@@ -108,6 +108,11 @@ export class PostImagesService {
         ),
       ),
     );
+  }
+
+  async findOwned(postId: string, context: AuthenticatedContext) {
+    await this.postsService.getPostForAction(postId, context, "manageImages");
+    return this.findAll(postId, context);
   }
 
   async remove(postId: string, imageId: string, context: AuthenticatedContext) {

@@ -1,3 +1,4 @@
+import { Promotion } from "../promotions/promotion.entity";
 import {
   BadRequestException,
   ConflictException,
@@ -9,12 +10,11 @@ import {
 } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
 import {
-  Brackets,
   DataSource,
   EntityManager,
-  In,
   IsNull,
   Not,
+  Raw,
   Repository,
   SelectQueryBuilder,
 } from "typeorm";
@@ -87,6 +87,11 @@ export class PostsService {
     private readonly reviewsRepository?: Repository<ReviewEntity>,
     @Optional()
     private readonly realtime?: RealtimeService,
+    private readonly lifecycle: PostLifecycleService = new PostLifecycleService(
+      dataSource,
+      authorization,
+      new PostActivationPolicyService(),
+    ),
   ) {}
 
   async create(dto: CreatePostDto, context: AuthenticatedContext) {
@@ -185,12 +190,23 @@ export class PostsService {
     const { page, limit, categoryId } = query;
     const [items, total] = await this.postsRepository.findAndCount({
       withDeleted: query.deleted === "true",
-      where: {
+      where: (query.status === PostStatus.EXPIRED
+        ? [PostStatus.ACTIVE, PostStatus.EXPIRED]
+        : [query.status]
+      ).map((status) => ({
         sellerId: context.principal.id,
         ...(query.deleted === "true" ? { deletedAt: Not(IsNull()) } : {}),
-        ...(query.status ? { status: query.status } : {}),
+        ...(status ? { status } : {}),
+        ...(status === PostStatus.ACTIVE
+          ? {
+              expiresAt: Raw(
+                (alias) =>
+                  `${alias} ${query.status === PostStatus.EXPIRED ? "<=" : ">"} statement_timestamp()`,
+              ),
+            }
+          : {}),
         ...(categoryId ? { categoryId } : {}),
-      },
+      })),
       relations: {
         category: true,
       },
@@ -202,13 +218,16 @@ export class PostsService {
       },
       order: {
         createdAt: "DESC",
+        id: "DESC",
       },
       skip: (page - 1) * limit,
       take: limit,
     });
 
     return {
-      items: items.map((post) => this.toResponse(post)),
+      items: await this.withPromotionMetadata(
+        items.map((post) => this.toResponse(post)),
+      ),
       meta: createPaginationMeta(query, total),
     };
   }
@@ -257,18 +276,10 @@ export class PostsService {
       const keywords = [...new Set(q.trim().split(/\s+/).filter(Boolean))];
       keywords.forEach((keyword, index) => {
         const parameter = `keyword${index}`;
-        // Every token must match; each may occur in either field, in any order.
+        // Every token must occur in the title, in any order.
         queryBuilder.andWhere(
-          new Brackets((builder) => {
-            builder
-              .where(
-                `${normalize}(post.title) ILIKE ${normalize}(:${parameter})`,
-                { [parameter]: `%${keyword}%` },
-              )
-              .orWhere(
-                `${normalize}(post.description) ILIKE ${normalize}(:${parameter})`,
-              );
-          }),
+          `${normalize}(post.title) ILIKE ${normalize}(:${parameter})`,
+          { [parameter]: `%${keyword}%` },
         );
       });
     }
@@ -310,6 +321,17 @@ export class PostsService {
         });
     }
 
+    const schema =
+      (this.dataSource.options as { schema?: string }).schema ?? "public";
+    if (!/^[a-z][a-z0-9_]*$/.test(schema)) throw new Error("Invalid schema");
+    queryBuilder.addSelect(
+      `(SELECT MAX(pr."endsAt") FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP)`,
+      "promoted_until",
+    );
+    queryBuilder.addSelect(
+      `CASE WHEN (SELECT COUNT(*) FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP)>0 THEN 1 ELSE 0 END`,
+      "promotion_priority",
+    );
     const total = await queryBuilder.clone().getCount();
     const { entities, raw } = await this.applyListingOrder(
       queryBuilder,
@@ -326,6 +348,8 @@ export class PostsService {
     );
     const items = cards.map((post, index) => ({
       ...post,
+      isPromoted: !!raw[index].promoted_until,
+      promotedUntil: raw[index].promoted_until ?? null,
       distance: hasLocationFilter ? Number(raw[index].distance) : null,
     }));
 
@@ -342,10 +366,14 @@ export class PostsService {
 
   async findOne(id: string, context: AuthorizationContext) {
     const post = await this.postsRepository.findOne({
-      where: {
-        id,
-        status: In([PostStatus.ACTIVE, PostStatus.SOLD]),
-      },
+      where: [
+        {
+          id,
+          status: PostStatus.ACTIVE,
+          expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
+        },
+        { id, status: PostStatus.SOLD },
+      ],
       relations: {
         seller: true,
         category: true,
@@ -404,9 +432,23 @@ export class PostsService {
     };
   }
 
-  async getReadablePost(id: string) {
+  async getReadablePost(id: string, context?: AuthorizationContext) {
+    if (context?.kind === "authenticated") {
+      const owned = await this.postsRepository.findOneBy({
+        id,
+        sellerId: context.principal.id,
+      });
+      if (owned) return owned;
+    }
     const post = await this.postsRepository.findOne({
-      where: { id, status: In([PostStatus.ACTIVE, PostStatus.SOLD]) },
+      where: [
+        {
+          id,
+          status: PostStatus.ACTIVE,
+          expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
+        },
+        { id, status: PostStatus.SOLD },
+      ],
     });
     if (!post) throw new NotFoundException("Post not found");
     return post;
@@ -423,6 +465,31 @@ export class PostsService {
         ...(await resolveAvatar(this.storage, post.seller)),
       },
     };
+  }
+
+  private async withPromotionMetadata<
+    T extends { id: string; status?: string },
+  >(posts: T[]) {
+    if (!posts.length) return [];
+    const promotions = await this.dataSource
+      .getRepository(Promotion)
+      .createQueryBuilder("pr")
+      .where('pr."postId" IN (:...ids)', { ids: posts.map((p) => p.id) })
+      .andWhere(
+        'pr."endsAt">CURRENT_TIMESTAMP AND pr."startsAt"<=CURRENT_TIMESTAMP',
+      )
+      .getMany();
+    return posts.map((p) => {
+      const ends = promotions
+        .filter((pr) => pr.postId === p.id)
+        .map((pr) => pr.endsAt)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+      return {
+        ...p,
+        isPromoted: p.status === "active" && !!ends,
+        promotedUntil: p.status === "active" ? (ends ?? null) : null,
+      };
+    });
   }
 
   private async withListThumbnails(posts: PostEntity[]) {
@@ -458,8 +525,9 @@ export class PostsService {
             this.logger.warn(`Could not sign thumbnail for post ${post.id}`);
           }
         }
+        const { images: _gallery, ...card } = await this.withSellerAvatar(post);
         return {
-          ...(await this.withSellerAvatar(post)),
+          ...card,
           thumbnailUrl,
           ...(thumbnailUrlExpiresAt ? { thumbnailUrlExpiresAt } : {}),
         };
@@ -469,7 +537,11 @@ export class PostsService {
 
   async getActivePost(id: string) {
     const post = await this.postsRepository.findOne({
-      where: { id, status: PostStatus.ACTIVE },
+      where: {
+        id,
+        status: PostStatus.ACTIVE,
+        expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
+      },
     });
 
     if (!post) {
@@ -876,7 +948,7 @@ export class PostsService {
     withDeleted = false,
   ) {
     const post = await this.postsRepository.findOne({
-      where: { id },
+      where: { id, sellerId: context.principal.id },
       withDeleted,
     });
 
@@ -944,6 +1016,12 @@ export class PostsService {
   private toResponse(post: PostEntity) {
     return {
       ...post,
+      status:
+        post.status === PostStatus.ACTIVE &&
+        post.expiresAt?.getTime() <= Date.now()
+          ? PostStatus.EXPIRED
+          : post.status,
+      freeRenewalAvailable: post.renewalCount === 0,
       location: post.location
         ? {
             latitude: post.location.coordinates[1],

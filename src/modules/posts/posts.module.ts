@@ -27,6 +27,8 @@ import { ModerationModule } from "../moderation/moderation.module";
       MessageEntity,
       ReviewEntity,
       NotificationEntity,
+      UserEntity,
+      PostRenewalEntity,
     ]),
     AuthorizationModule,
     StorageModule,

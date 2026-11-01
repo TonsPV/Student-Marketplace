@@ -57,7 +57,11 @@ export async function sellerStatistics(
       .getRawOne<{ ratingAverage: string | null; reviewCount: string }>(),
     dataSource
       .getRepository(PostEntity)
-      .countBy({ sellerId, status: PostStatus.ACTIVE }),
+      .countBy({
+        sellerId,
+        status: PostStatus.ACTIVE,
+        expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
+      }),
     dataSource
       .getRepository(PostEntity)
       .countBy({ sellerId, status: PostStatus.SOLD }),

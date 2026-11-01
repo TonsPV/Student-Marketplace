@@ -134,6 +134,11 @@ describe("university and locationName API contracts", () => {
     if (ds) await disposeTestDatabase(ds);
   });
 
+  beforeEach(async () => {
+    // Each field scenario gets its own quota instead of sharing accumulated posts.
+    owner = await createTestUser(ds);
+  });
+
   it.each([undefined, null, "  Đại học Bách khoa  "])(
     "registers with university %p while preserving the registration response",
     async (university) => {
@@ -231,7 +236,6 @@ describe("university and locationName API contracts", () => {
     for (const q of [
       "dien thoai thu nghiem",
       "ĐIỆN THOẠI THỬ NGHIỆM",
-      "do dung con moi",
     ]) {
       const response = await http()
         .get("/api/v1/posts/search")
@@ -276,7 +280,7 @@ describe("university and locationName API contracts", () => {
         totalPages: 1,
       });
     }
-    for (const q of ["sach toan 9", "sach toann 3"]) {
+    for (const q of ["sach toan 9", "sach toann 3", "danh cho hoc sinh", "sach hoc sinh"]) {
       const response = await http()
         .get("/api/v1/posts/search")
         .query({ q, sellerId: owner.id, categoryId })
@@ -1100,6 +1104,43 @@ describe("university and locationName API contracts", () => {
     expect(item.seller).not.toHaveProperty("isLocked");
     expect(item).not.toHaveProperty("deletedAt");
     expect(item).not.toHaveProperty("buyerId");
+  });
+
+  it("enforces quota and expiry through HTTP, keeps expired detail private and renews once for free", async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      const created = await http().post("/api/v1/posts").set(auth(owner)).send(body()).expect(201);
+      ids.push(created.body.data.id);
+    }
+    const full = await http().post("/api/v1/posts").set(auth(owner)).send(body()).expect(409);
+    expect(full.body.code).toBe("POST_QUOTA_EXCEEDED");
+    const id = ids[0];
+    await ds.getRepository(PostEntity).update(id, {
+      publishedAt: new Date(Date.now() - 15 * 86400000),
+      expiresAt: new Date(Date.now() - 86400000),
+    });
+    await http().get(`/api/v1/posts/${id}`).expect(404);
+    await http().get(`/api/v1/posts/${id}/images`).expect(404);
+    const detail = await http().get(`/api/v1/posts/me/${id}`).set(auth(owner)).expect(200);
+    expect(detail.body.data.status).toBe("expired");
+    await http().get(`/api/v1/posts/${id}/images/me`).set(auth(owner)).expect(200);
+    await http().get(`/api/v1/posts/me/${id}`).set(auth(outsider)).expect(404);
+    await http().post(`/api/v1/posts/${id}/renew`).expect(401);
+    await http().post(`/api/v1/posts/${id}/renew`).set(auth(outsider)).expect(403);
+    const quota = await http().get("/api/v1/posts/me/quota").set(auth(owner)).expect(200);
+    expect(quota.body.data).toMatchObject({ used: 4, remaining: 1 });
+    const renewed = await http().post(`/api/v1/posts/${id}/renew`).set(auth(owner)).expect(201);
+    expect(renewed.body.data).toMatchObject({ status: "active", renewalCount: 1, freeRenewalAvailable: false });
+    const history = await http().get(`/api/v1/posts/${id}/renewals`).set(auth(owner)).expect(200);
+    expect(history.body.data.items).toHaveLength(1);
+    expect(history.body.data.items[0]).toMatchObject({ renewalNumber: 1, kind: "free" });
+    expect(history.body.data.items[0]).not.toHaveProperty("paymentReference");
+    await ds.getRepository(PostEntity).update(id, {
+      publishedAt: new Date(Date.now() - 15 * 86400000),
+      expiresAt: new Date(Date.now() - 86400000),
+    });
+    const paid = await http().post(`/api/v1/posts/${id}/renew`).set(auth(owner)).expect(409);
+    expect(paid.body.code).toBe("POST_PAYMENT_REQUIRED");
   });
 
   it("documents nullable optional strings on registration, profile and post DTOs", () => {

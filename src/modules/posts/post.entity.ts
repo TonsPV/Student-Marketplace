@@ -3,6 +3,7 @@ import { CategoryEntity } from "../categories/category.entity";
 import { UserEntity } from "../user/user.entity";
 import {
   Column,
+  Check,
   CreateDateColumn,
   DeleteDateColumn,
   Entity,
@@ -26,6 +27,7 @@ export enum PostStatus {
   ACTIVE = "active",
   SOLD = "sold",
   HIDDEN = "hidden",
+  EXPIRED = "expired",
 }
 
 @Entity("posts")
@@ -33,6 +35,16 @@ export enum PostStatus {
 @Index("idx_posts_category_id", ["categoryId"])
 @Index("idx_posts_location", ["location"], { spatial: true })
 @Index("idx_posts_created_at", ["createdAt"])
+@Index("idx_posts_seller_status_expires", ["sellerId", "status", "expiresAt"], {
+  where: '"deleted_at" IS NULL',
+})
+@Index("idx_posts_status_expires", ["status", "expiresAt"], {
+  where: '"deleted_at" IS NULL',
+})
+@Check(
+  "chk_posts_lifetime",
+  '"expires_at" > "published_at" AND "renewal_count" >= 0',
+)
 @Index("idx_posts_title_unaccent_trgm", { synchronize: false })
 @Index("idx_posts_description_unaccent_trgm", { synchronize: false })
 export class PostEntity extends BaseEntity {
@@ -79,6 +91,26 @@ export class PostEntity extends BaseEntity {
     default: PostStatus.ACTIVE,
   })
   status!: PostStatus;
+
+  /** Start of the current display cycle; createdAt remains the original date. */
+  @Column({
+    name: "published_at",
+    type: "timestamptz",
+    default: () => "CURRENT_TIMESTAMP",
+  })
+  publishedAt!: Date;
+
+  @Column({
+    name: "expires_at",
+    type: "timestamptz",
+    // TypeORM normalizes expressions containing CURRENT_TIMESTAMP to now(),
+    // dropping the interval. Use now() explicitly so synchronize preserves it.
+    default: () => "(now() + interval '336 hours')",
+  })
+  expiresAt!: Date;
+
+  @Column({ name: "renewal_count", type: "integer", default: 0 })
+  renewalCount!: number;
 
   @Column({
     type: "geography",
