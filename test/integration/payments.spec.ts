@@ -2,10 +2,14 @@ jest.mock("@nestjs/schedule", () => ({ Cron: () => () => {} }));
 import { DataSource } from "typeorm";
 import { ConfigService } from "@nestjs/config";
 import { PaymentsService } from "../../src/modules/payments/payments.service";
-import { PaymentOrder } from "../../src/modules/payments/payment.entity";
+import {
+  PaymentOrder,
+  PaymentRequest,
+} from "../../src/modules/payments/payment.entity";
 import { Promotion } from "../../src/modules/promotions/promotion.entity";
 import { PostEntity, PostStatus } from "../../src/modules/posts/post.entity";
 import { createHmac } from "node:crypto";
+import { PromotionEligibilityService } from "../../src/modules/payments/promotion-eligibility.service";
 import { queryResponseFields } from "../../src/modules/payments/querydr";
 import { PaymentsPromotions1791810000000 } from "../../src/database/migrations/1791810000000-PaymentsPromotions";
 import { UserEntity } from "../../src/modules/user/user.entity";
@@ -140,9 +144,13 @@ describe("payment transactions", () => {
       auth.createGuestContext(),
     );
     expect(newest.items[0].id).toBe(newer.id);
-    await ds
-      .getRepository(Promotion)
-      .update({ postId }, { endsAt: new Date(Date.now() - 1000) });
+    await ds.getRepository(Promotion).update(
+      { postId },
+      {
+        startsAt: new Date(Date.now() - 2000),
+        endsAt: new Date(Date.now() - 1000),
+      },
+    );
     const expired = await posts.search(
       Object.assign(new SearchPostsDto(), { limit: 1 }),
       auth.createGuestContext(),
@@ -418,9 +426,126 @@ describe("payment transactions", () => {
     expect(third.items[0].id).toBe(c.id);
     expect(first.meta.total).toBe(3);
     expect((await get(1, "newest")).items[0].id).toBe(c.id);
-    await ds
-      .getRepository(Promotion)
-      .update({ postId: b.id }, { endsAt: new Date(Date.now() - 1000) });
+    await ds.getRepository(Promotion).update(
+      { postId: b.id },
+      {
+        startsAt: new Date(Date.now() - 2000),
+        endsAt: new Date(Date.now() - 1000),
+      },
+    );
     expect((await get(1)).items[0].id).toBe(a.post.id);
+  });
+  async function expireListing(postId: string) {
+    await ds.getRepository(PostEntity).update(postId, {
+      status: PostStatus.ACTIVE,
+      publishedAt: new Date(Date.now() - 15 * 86400000),
+      expiresAt: new Date(Date.now() - 86400000),
+    });
+  }
+  it("rejects overdue listings at checkout, new orders and pending checkout retries before the expiry job", async () => {
+    const { order, post } = await fresh();
+    const original = await ds
+      .getRepository(PaymentOrder)
+      .findOneByOrFail({ id: order.id });
+    const alias = `expiry-alias-${++seq}`;
+    expect(
+      (await s.create(owner, post.id, "boost_24h", alias, "127.0.0.1")).id,
+    ).toBe(order.id);
+    await expireListing(post.id);
+    expect(
+      (await ds.getRepository(PostEntity).findOneByOrFail({ id: post.id }))
+        .status,
+    ).toBe(PostStatus.ACTIVE);
+    expect(await s.checkout(owner, post.id)).toMatchObject({
+      eligible: false,
+      reason: "post_expired",
+    });
+    for (const key of [original.idempotencyKey, alias, `expiry-new-${++seq}`]) {
+      await expect(
+        s.create(owner, post.id, "boost_24h", key, "127.0.0.1"),
+      ).rejects.toMatchObject({ status: 409 });
+    }
+    // Legacy orders without a PaymentRequest receipt must enforce the same check.
+    await ds
+      .getRepository(PaymentRequest)
+      .delete({ ownerId: owner, key: original.idempotencyKey });
+    await expect(
+      s.create(
+        owner,
+        post.id,
+        "boost_24h",
+        original.idempotencyKey,
+        "127.0.0.1",
+      ),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(
+      await ds.getRepository(PaymentOrder).countBy({ postId: post.id }),
+    ).toBe(1);
+    expect(await ds.getRepository(Promotion).countBy({ postId: post.id })).toBe(
+      0,
+    );
+  });
+  it("records payment but never grants a boost if the listing expires before return confirmation", async () => {
+    const { order, post } = await fresh();
+    await expireListing(post.id);
+    const p = callback(order.txnRef);
+    expect(await s.confirmReturn(owner, p)).toMatchObject({
+      status: "paid",
+      fulfillment: "requires_review",
+      reason: "post_expired",
+    });
+    await s.confirmReturn(owner, p);
+    expect(
+      await ds.getRepository(Promotion).countBy({ orderId: order.id }),
+    ).toBe(0);
+    // Retrying an already paid request still returns the same payment receipt.
+    const row = await ds
+      .getRepository(PaymentOrder)
+      .findOneByOrFail({ id: order.id });
+    expect(
+      (
+        await s.create(
+          owner,
+          post.id,
+          "boost_24h",
+          row.idempotencyKey,
+          "127.0.0.1",
+        )
+      ).id,
+    ).toBe(order.id);
+  });
+  it("signed reconciliation also refuses to activate a boost for an overdue active listing", async () => {
+    const { order, post } = await fresh();
+    await expireListing(post.id);
+    mockQuery();
+    await s.reconcile();
+    expect(await s.read(owner, order.id)).toMatchObject({
+      status: "paid",
+      fulfillment: "requires_review",
+      reason: "post_expired",
+    });
+    expect(
+      await ds.getRepository(Promotion).countBy({ orderId: order.id }),
+    ).toBe(0);
+  });
+  it("uses the current database clock when a transaction crosses the listing deadline", async () => {
+    const { post } = await fresh();
+    await ds.transaction(async (manager) => {
+      await manager.query(
+        `UPDATE posts SET published_at=clock_timestamp()-interval '14 days', expires_at=clock_timestamp()+interval '100 milliseconds' WHERE id=$1`,
+        [post.id],
+      );
+      await manager.query("SELECT pg_sleep(0.15)");
+      const currentPost = await manager.findOneByOrFail(PostEntity, {
+        id: post.id,
+      });
+      expect(
+        await new PromotionEligibilityService().check(
+          manager,
+          currentPost,
+          owner,
+        ),
+      ).toMatchObject({ eligible: false, reason: "post_expired" });
+    });
   });
 });
