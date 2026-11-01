@@ -52,7 +52,7 @@ describe("accent-insensitive post search", () => {
       otherSeller.id,
       otherCategory.id,
       {
-        title: "Đồ dùng sinh viên",
+        title: "Đồ dùng sinh viên: điện thoại",
         description: "Có điện thoại và sách giáo khoa",
         price: "2000000",
         createdAt: new Date("2026-01-02T00:00:00Z"),
@@ -75,7 +75,7 @@ describe("accent-insensitive post search", () => {
   });
 
   it.each(["dien thoai", "ĐIỆN THOẠI", "điện thoại", "điện thoại"])(
-    "matches title and description for %s, newest first",
+    "matches titles for %s, newest first",
     async (q) => {
       const result = await search({ q });
       expect(result.items.map((post) => post.id)).toEqual([
@@ -105,7 +105,7 @@ describe("accent-insensitive post search", () => {
     expect((await search({ q: "dien thoaai" })).meta.total).toBe(0);
     expect(
       (await search({ q: "sach giao khoa" })).items.map((post) => post.id),
-    ).toEqual([descriptionPost.id]);
+    ).toEqual([]);
   });
 
   it("returns one cover per post without changing totals, pagination or gallery order", async () => {
@@ -167,7 +167,7 @@ describe("accent-insensitive post search", () => {
     );
   });
 
-  it("matches all separated keywords in any order, including across fields", async () => {
+  it("requires all separated keywords in the title and excludes description-only matches", async () => {
     const repo = ds.getRepository(PostEntity);
     const book = await createTestPost(
       ds,
@@ -214,10 +214,8 @@ describe("accent-insensitive post search", () => {
         "sách toán lời giải 3",
       ]) {
         const result = await search({ q });
-        expect(result.items.map((post) => post.id).sort()).toEqual(
-          [book.id, crossFields.id].sort(),
-        );
-        expect(result.meta.total).toBe(2);
+        expect(result.items.map((post) => post.id).sort()).toEqual([book.id]);
+        expect(result.meta.total).toBe(1);
       }
       expect((await search({ q: "sach toann 3" })).meta.total).toBe(0);
       const result = await search({
@@ -271,7 +269,7 @@ describe("accent-insensitive post search", () => {
     }
   });
 
-  it("uses both GIN expression indexes and preserves them during synchronize", async () => {
+  it("uses the title GIN expression index and preserves it during synchronize", async () => {
     await ds.synchronize();
     const schema = ownedTestSchema(ds);
     const runner = ds.createQueryRunner();
@@ -290,14 +288,12 @@ describe("accent-insensitive post search", () => {
       const plans = await runner.query(
         `EXPLAIN (FORMAT JSON) SELECT id FROM "${schema}".posts
         WHERE status = 'active' AND deleted_at IS NULL AND
-        ("${schema}".post_search_unaccent(title) ILIKE "${schema}".post_search_unaccent($1)
-        OR "${schema}".post_search_unaccent(description) ILIKE "${schema}".post_search_unaccent($1)) AND
-        ("${schema}".post_search_unaccent(title) ILIKE "${schema}".post_search_unaccent($2)
-        OR "${schema}".post_search_unaccent(description) ILIKE "${schema}".post_search_unaccent($2))`,
+        "${schema}".post_search_unaccent(title) ILIKE "${schema}".post_search_unaccent($1) AND
+        "${schema}".post_search_unaccent(title) ILIKE "${schema}".post_search_unaccent($2)`,
         ["%dien%", "%thoai%"],
       );
       expect(JSON.stringify(plans)).toContain("idx_posts_title_unaccent_trgm");
-      expect(JSON.stringify(plans)).toContain(
+      expect(JSON.stringify(plans)).not.toContain(
         "idx_posts_description_unaccent_trgm",
       );
     } finally {
@@ -324,15 +320,13 @@ describe("accent-insensitive post search", () => {
       const plans = await runner.query(
         `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
         SELECT id FROM "${schema}".posts WHERE status = $2 AND deleted_at IS NULL AND
-        ("${schema}".post_search_unaccent(title) ILIKE "${schema}".post_search_unaccent($1)
-        OR "${schema}".post_search_unaccent(description) ILIKE "${schema}".post_search_unaccent($1)) AND
-        ("${schema}".post_search_unaccent(title) ILIKE "${schema}".post_search_unaccent($3)
-        OR "${schema}".post_search_unaccent(description) ILIKE "${schema}".post_search_unaccent($3))
+        "${schema}".post_search_unaccent(title) ILIKE "${schema}".post_search_unaccent($1) AND
+        "${schema}".post_search_unaccent(title) ILIKE "${schema}".post_search_unaccent($3)
         ORDER BY created_at DESC LIMIT 20`,
         ["%dien%", PostStatus.ACTIVE, "%thoai%"],
       );
       expect(JSON.stringify(plans)).toContain("idx_posts_title_unaccent_trgm");
-      expect(JSON.stringify(plans)).toContain(
+      expect(JSON.stringify(plans)).not.toContain(
         "idx_posts_description_unaccent_trgm",
       );
       expect(plans[0]["QUERY PLAN"][0].Plan["Actual Rows"]).toBe(2);
