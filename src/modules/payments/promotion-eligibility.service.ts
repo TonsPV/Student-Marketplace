@@ -19,6 +19,20 @@ export class PromotionEligibilityService {
         reason: "post_not_active",
         promotedUntil: null,
       };
+    // Read the live database clock after acquiring locks: transaction-start time
+    // can precede the deadline even when activation happens after expiry.
+    const [clock] = await m.query("SELECT clock_timestamp() AS now");
+    const now = new Date(clock.now);
+    if (
+      !(post.expiresAt instanceof Date) ||
+      !Number.isFinite(post.expiresAt.getTime()) ||
+      post.expiresAt <= now
+    )
+      return {
+        eligible: false,
+        reason: "post_expired",
+        promotedUntil: null,
+      };
     const user = await m.findOneBy(UserEntity, { id: owner, isLocked: false });
     if (!user)
       return {
@@ -26,7 +40,6 @@ export class PromotionEligibilityService {
         reason: "account_unavailable",
         promotedUntil: null,
       };
-    const now = new Date();
     const promotion = await m.findOne(Promotion, {
       where: {
         postId: post.id,

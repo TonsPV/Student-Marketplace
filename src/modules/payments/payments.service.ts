@@ -127,6 +127,25 @@ export class PaymentsService implements OnModuleInit {
     if (!o) throw new NotFoundException();
     return this.project(o);
   }
+  private async reuseCheckout(
+    m: EntityManager,
+    o: PaymentOrder,
+    owner: string,
+  ) {
+    // create() already holds the seller lock. Keep the same seller -> post
+    // lock order when reusing pending orders through any idempotency key.
+    if (o.status === "pending" && o.expiresAt > new Date()) {
+      const post = await m
+        .getRepository(PostEntity)
+        .createQueryBuilder("p")
+        .where("p.id=:postId", { postId: o.postId })
+        .setLock("pessimistic_write")
+        .getOne();
+      if (!(await this.eligible(m, post, owner)))
+        throw new ConflictException("Post cannot be promoted");
+    }
+    return this.project(o);
+  }
   async create(
     owner: string,
     postId: string,
@@ -183,8 +202,10 @@ export class PaymentsService implements OnModuleInit {
       if (receipt) {
         if (receipt.postId !== postId || receipt.packageCode !== packageCode)
           throw new ConflictException("Idempotency payload mismatch");
-        return this.project(
+        return this.reuseCheckout(
+          m,
           await m.findOneByOrFail(PaymentOrder, { id: receipt.orderId }),
+          owner,
         );
       }
       const prior = await m.findOneBy(PaymentOrder, {
@@ -194,7 +215,7 @@ export class PaymentsService implements OnModuleInit {
       if (prior) {
         if (prior.postId !== postId || prior.packageCode !== packageCode)
           throw new ConflictException("Idempotency payload mismatch");
-        return this.project(prior);
+        return this.reuseCheckout(m, prior, owner);
       }
       const post = await m
         .getRepository(PostEntity)
@@ -356,7 +377,8 @@ export class PaymentsService implements OnModuleInit {
             return reply("99", "Invalid transaction");
           o.status = "paid";
           o.transactionNo = p.vnp_TransactionNo;
-          if (await this.eligible(m, post, o.ownerId)) {
+          const eligibility = await this.eligibility.check(m, post, o.ownerId);
+          if (eligibility.eligible) {
             const startsAt = new Date();
             await m.save(
               m.create(Promotion, {
@@ -370,7 +392,9 @@ export class PaymentsService implements OnModuleInit {
             o.reason = null;
           } else {
             o.fulfillment = "requires_review";
-            o.reason = "Post no longer eligible or already promoted";
+            o.reason =
+              eligibility.reason ??
+              "Post no longer eligible or already promoted";
           }
         } else if (
           p.vnp_ResponseCode === "24" ||
