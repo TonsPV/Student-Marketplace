@@ -57,3 +57,36 @@ it("uppercase server principal and raw instance IDs normalize consistently for f
     ),
   ).not.toThrow();
 });
+
+it("rejects updates and deletes for soft-deleted reviews", async () => {
+  const authorization = new AuthorizationService(new CaslAbilityFactory()),
+    findOneBy = jest.fn().mockResolvedValue({
+      id: REVIEW,
+      reviewerId: OWNER,
+      postId: POST,
+      deletedAt: new Date(),
+    }),
+    save = jest.fn(),
+    softRemove = jest.fn();
+  const service = new ReviewsService(
+    { findOneBy, save, softRemove } as never,
+    {} as never,
+    {} as never,
+    authorization,
+  );
+  const context = authorization.createAuthenticatedContext({
+    id: OWNER,
+    email: "test@example.com",
+    fullName: "Test",
+    isAdmin: false,
+  });
+
+  await expect(
+    service.update(REVIEW, { rating: 5 }, context),
+  ).rejects.toMatchObject({ status: 404 });
+  await expect(service.remove(REVIEW, context)).rejects.toMatchObject({
+    status: 404,
+  });
+  expect(save).not.toHaveBeenCalled();
+  expect(softRemove).not.toHaveBeenCalled();
+});

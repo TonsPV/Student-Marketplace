@@ -110,7 +110,7 @@ export class ReviewsService {
       },
     });
 
-    if (!review) {
+    if (!review || review.deletedAt) {
       throw new NotFoundException("Review not found");
     }
     {
@@ -198,7 +198,7 @@ export class ReviewsService {
     context: AuthenticatedContext,
   ) {
     const review = await this.reviewsRepository.findOneBy({ id });
-    if (!review) {
+    if (!review || review.deletedAt) {
       throw new NotFoundException("Review not found");
     }
     const projection = toReviewProjection({
@@ -226,7 +226,7 @@ export class ReviewsService {
 
   async remove(id: string, context: AuthenticatedContext) {
     const review = await this.reviewsRepository.findOneBy({ id });
-    if (!review) {
+    if (!review || review.deletedAt) {
       throw new NotFoundException("Review not found");
     }
     this.authorization.assertResource(
