@@ -58,9 +58,14 @@ function createHarness(options: {
   const manager = {
     getRepository: (entity: unknown) => {
       if (entity === PostEntity) {
+        const postQuery: Record<string, jest.Mock> = {};
+        for (const method of ["setLock", "where"])
+          postQuery[method] = jest.fn().mockReturnValue(postQuery);
+        postQuery.getOne = jest.fn().mockResolvedValue(post);
         return {
           findOne: jest.fn().mockResolvedValue(post),
           save: txPostSave,
+          createQueryBuilder: jest.fn(() => postQuery),
         };
       }
       if (entity === ConversationEntity) {

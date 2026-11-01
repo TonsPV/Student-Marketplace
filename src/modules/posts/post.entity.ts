@@ -96,6 +96,15 @@ export class PostEntity extends BaseEntity {
   })
   locationName!: string | null;
 
+  /**
+   * Thời hạn hiển thị trên listing (Phase 4 Step 2). Quy ước: còn hiệu lực
+   * khi expiresAt > now; hết hạn khi <= now. NULL = bài cũ trước policy,
+   * vẫn được coi là còn hiệu lực (không backfill). Bài mới đăng nhận
+   * expiresAt từ POST_EXPIRATION_DAYS (post-expiration.config.ts).
+   */
+  @Column({ name: "expires_at", type: "timestamptz", nullable: true })
+  expiresAt!: Date | null;
+
   @OneToMany(() => PostImageEntity, (image) => image.post)
   images!: PostImageEntity[];
 

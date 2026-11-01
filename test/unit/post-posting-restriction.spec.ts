@@ -73,6 +73,9 @@ function setup(options: {
     findOne: jest.fn(async () => ({ ...post })),
     createQueryBuilder: jest.fn().mockReturnValue(query),
     restore: jest.fn(async () => calls.push("restore:post")),
+    // Phase 4 Step 2: restore grants a fresh expiry window when the old one
+    // is over; the order assertions above do not track this write.
+    update: jest.fn(async () => ({})),
     findOneByOrFail: jest.fn().mockResolvedValue(post),
   };
   const categories = {

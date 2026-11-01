@@ -3,8 +3,11 @@ import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
 import { CategoryEntity } from "../categories/category.entity";
 import { PostEntity } from "./post.entity";
+import { PostPromotionEntity } from "./post-promotion.entity";
 import { PostsController } from "./posts.controller";
+import { AdminPostPromotionsController } from "./admin-post-promotions.controller";
 import { PostsService } from "./posts.service";
+import { PostPromotionsService } from "./post-promotions.service";
 import { AuthorizationModule } from "../authorization/authorization.module";
 import { ConversationEntity } from "../conversations/entities/conversation.entity";
 import { MessageEntity } from "../messages/entities/message.entity";
@@ -18,6 +21,7 @@ import { ModerationModule } from "../moderation/moderation.module";
   imports: [
     TypeOrmModule.forFeature([
       PostEntity,
+      PostPromotionEntity,
       CategoryEntity,
       ConversationEntity,
       MessageEntity,
@@ -30,8 +34,8 @@ import { ModerationModule } from "../moderation/moderation.module";
     RealtimeModule,
     ModerationModule,
   ],
-  controllers: [PostsController],
-  providers: [PostsService],
+  controllers: [PostsController, AdminPostPromotionsController],
+  providers: [PostsService, PostPromotionsService],
   exports: [PostsService],
 })
 export class PostsModule {}

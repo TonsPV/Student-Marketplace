@@ -17,6 +17,7 @@ const VALID_SUBJECTS = new Set([
   "Upload",
   "UserWarning",
   "PostingRestriction",
+  "PostPromotion",
 ]);
 
 export function auditRouteAccess(

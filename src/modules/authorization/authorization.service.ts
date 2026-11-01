@@ -124,6 +124,7 @@ export class AuthorizationService {
       | "Upload"
       | "UserWarning"
       | "PostingRestriction"
+      | "PostPromotion"
     >,
   >(
     context: AuthorizationContext,

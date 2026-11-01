@@ -16,6 +16,7 @@ import {
   IsNull,
   Not,
   Repository,
+  SelectQueryBuilder,
 } from "typeorm";
 
 import { createPaginationMeta } from "../../common/utils/pagination.util";
@@ -46,11 +47,21 @@ import { WS_EVENTS } from "../realtime/realtime.events";
 import { MarkPostSoldDto } from "./dto/mark-post-sold.dto";
 import { PurchaseReviewStatus } from "./dto/purchased-post-response.dto";
 import { sellerStatistics } from "../reviews/seller-statistics";
+import { ReputationLevel } from "../reviews/reputation-level";
 import { PostImageEntity } from "../post-images/post-image.entity";
 import {
   ModerationService,
   POSTING_ISOLATION,
 } from "../moderation/moderation.service";
+import { PostSort } from "./dto/post-sort";
+import { postExpiresAt } from "../../config/post-expiration.config";
+import {
+  LISTING_EXPIRY_PREDICATE,
+  activePromotionExpression,
+  reputationCaseExpression,
+  reputationPriorityExpression,
+  reputationSubquery,
+} from "./listing-ranking";
 
 @Injectable()
 export class PostsService {
@@ -123,45 +134,48 @@ export class PostsService {
       location: this.toStoredLocation(dto.location),
       locationName: dto.locationName ?? null,
       sellerId: context.principal.id,
+      // Phase 4 Step 2: every new listing gets a lifetime from the
+      // centralized POST_EXPIRATION_DAYS config (proposed default 30 days).
+      expiresAt: postExpiresAt(new Date()),
     });
 
     return this.toResponse(await repo.save(post));
   }
 
+  /**
+   * Public listing feed. Phase 4: RECOMMENDED (reputation priority with an
+   * active-promotion boost) is the default sort, replacing the previous
+   * createdAt DESC — intentional, not a silent revert. The legacy
+   * findAndCount branch removed in Step 2 was unreachable dead code (the
+   * DTO defaults `sort` to RECOMMENDED) and returned sellers without
+   * reputation fields; every response now carries the unified ranking.
+   * Eligibility: ACTIVE, not soft-deleted, and `expires_at IS NULL OR
+   * expires_at > now` (now bound once per request as :listingNow).
+   */
   async findAll(query: FindPostsDto, context: AuthorizationContext) {
     this.authorization.assertRoute(context, "read", "Post");
     const { page, limit, categoryId } = query;
-
-    const [items, total] = await this.postsRepository.findAndCount({
-      where: {
-        status: PostStatus.ACTIVE,
-        ...(categoryId ? { categoryId } : {}),
-      },
-      relations: {
-        seller: true,
-        category: true,
-      },
-      select: {
-        seller: {
-          id: true,
-          fullName: true,
-          avatarUrl: true,
-          avatarStorageKey: true,
-        },
-        category: {
-          id: true,
-          name: true,
-        },
-      },
-      order: {
-        createdAt: "DESC",
-      },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
-
+    const builder = this.listingQueryBuilder()
+      .where("post.status = :status", { status: PostStatus.ACTIVE })
+      .andWhere("post.deleted_at IS NULL")
+      .andWhere(LISTING_EXPIRY_PREDICATE, { listingNow: new Date() });
+    if (categoryId)
+      builder.andWhere("post.category_id = :categoryId", { categoryId });
+    this.applyReputationFilter(builder, query.reputationLevel);
+    // Total is computed BEFORE the order/sort stage so the COUNT query never
+    // references the promotion-boost output alias (same shape as `search`).
+    const total = await builder.clone().getCount();
+    this.applyListingOrder(builder, query.sort);
+    const { entities, raw } = await builder
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getRawAndEntities();
     return {
-      items: await this.withListThumbnails(items),
+      items: await this.withListThumbnails(
+        entities.map((post, index) =>
+          this.withListingReputation(post, raw[index]),
+        ),
+      ),
       meta: createPaginationMeta(query, total),
     };
   }
@@ -229,7 +243,10 @@ export class PostsService {
       .leftJoin("post.category", "category")
       .addSelect(["category.id", "category.name"])
       .where("post.status = :status", { status: PostStatus.ACTIVE })
-      .andWhere("post.deleted_at IS NULL");
+      .andWhere("post.deleted_at IS NULL")
+      .andWhere(LISTING_EXPIRY_PREDICATE, { listingNow: new Date() });
+    this.joinListingReputation(queryBuilder);
+    this.applyReputationFilter(queryBuilder, query.reputationLevel);
 
     if (q) {
       const schema =
@@ -294,14 +311,19 @@ export class PostsService {
     }
 
     const total = await queryBuilder.clone().getCount();
-    const { entities, raw } = await queryBuilder
-      .orderBy("post.createdAt", "DESC")
-      .addOrderBy("post.id", "DESC")
+    const { entities, raw } = await this.applyListingOrder(
+      queryBuilder,
+      query.sort,
+    )
       .skip((page - 1) * limit)
       .take(limit)
       .getRawAndEntities();
 
-    const cards = await this.withListThumbnails(entities);
+    const cards = await this.withListThumbnails(
+      entities.map((post, index) =>
+        this.withListingReputation(post, raw[index]),
+      ),
+    );
     const items = cards.map((post, index) => ({
       ...post,
       distance: hasLocationFilter ? Number(raw[index].distance) : null,
@@ -837,6 +859,13 @@ export class PostsService {
     assertCanRestore(post);
     if (!post.deletedAt) return this.toResponse(post);
     await this.moderation.assertCanPost(manager, post.sellerId, now);
+    // Proposed policy (Phase 4 Step 2, needs confirmation): re-publishing a
+    // listing whose lifetime is null (legacy) or already over grants it a
+    // fresh window from POST_EXPIRATION_DAYS; unexpired lifetimes are kept.
+    if (!post.expiresAt || post.expiresAt.getTime() <= now.getTime()) {
+      post.expiresAt = postExpiresAt(now);
+      await repo.update(id, { expiresAt: post.expiresAt });
+    }
     await repo.restore(id);
     return this.toResponse(await repo.findOneByOrFail({ id }));
   }
@@ -922,6 +951,122 @@ export class PostsService {
           }
         : null,
     };
+  }
+
+  private listingQueryBuilder() {
+    const builder = this.postsRepository
+      .createQueryBuilder("post")
+      .leftJoin("post.seller", "seller")
+      .addSelect([
+        "seller.id",
+        "seller.fullName",
+        "seller.avatarUrl",
+        "seller.avatarStorageKey",
+      ])
+      .leftJoin("post.category", "category")
+      .addSelect(["category.id", "category.name"]);
+    this.joinListingReputation(builder);
+    return builder;
+  }
+
+  /** Validated schema for schema-qualified subqueries (consistent with search). */
+  private listingSchema(): string {
+    const options = this.dataSource.options as
+      | { schema?: string }
+      | undefined;
+    const schema = options?.schema ?? "public";
+    if (!/^[a-z][a-z0-9_]*$/.test(schema))
+      throw new Error("Invalid POSTGRES_SCHEMA");
+    return schema;
+  }
+
+  private joinListingReputation(builder: SelectQueryBuilder<PostEntity>): void {
+    builder
+      .leftJoin(
+        reputationSubquery(this.listingSchema()),
+        "reputation",
+        "reputation.seller_id = post.seller_id",
+      )
+      .addSelect("reputation.review_count", "sellerReviewCount")
+      .addSelect("reputation.rating_average", "sellerRatingAverage")
+      .addSelect(reputationCaseExpression(), "sellerReputationLevel");
+  }
+
+  private applyReputationFilter(
+    builder: SelectQueryBuilder<PostEntity>,
+    level?: ReputationLevel,
+  ): void {
+    if (level) {
+      builder.andWhere(
+        `${reputationCaseExpression()} = :reputationLevel`,
+        {
+          reputationLevel: level,
+        },
+      );
+    }
+  }
+
+  private applyListingOrder(
+    builder: SelectQueryBuilder<PostEntity>,
+    sort: PostSort = PostSort.RECOMMENDED,
+  ): SelectQueryBuilder<PostEntity> {
+    if (sort === PostSort.PRICE_ASC) {
+      return builder.orderBy("post.price", "ASC").addOrderBy("post.id", "DESC");
+    }
+    if (sort === PostSort.PRICE_DESC) {
+      return builder
+        .orderBy("post.price", "DESC")
+        .addOrderBy("post.id", "DESC");
+    }
+    if (sort === PostSort.NEWEST) {
+      return builder
+        .orderBy("post.createdAt", "DESC")
+        .addOrderBy("post.id", "DESC");
+    }
+    if (sort === PostSort.REPUTATION_HIGH_TO_LOW) {
+      // Pure reputation ordering by design: NO promotion boost here (Phase 4
+      // Step 2 §C4) — this sort means "best reputation first", nothing else.
+      return builder
+        .orderBy(reputationPriorityExpression(), "DESC")
+        .addOrderBy("reputation.rating_average", "DESC", "NULLS LAST")
+        .addOrderBy("reputation.review_count", "DESC", "NULLS LAST")
+        .addOrderBy("post.createdAt", "DESC")
+        .addOrderBy("post.id", "DESC");
+    }
+    // RECOMMENDED — Unified Ranking: reputation level first, then an active
+    // promotion (still inside the same reputation level, so a boosted LOW
+    // post can never outrank an EXCELLENT one), then rating/count/createdAt
+    // and a stable id tie-breaker. The 0/1 boost is a select output column
+    // (EXISTS, never a JOIN — no post duplication) and relies on the
+    // :listingNow parameter that every listing path binds exactly once.
+    builder.addSelect(
+      activePromotionExpression(this.listingSchema()),
+      "has_active_promotion",
+    );
+    return builder
+      .orderBy(reputationPriorityExpression(), "DESC")
+      .addOrderBy("has_active_promotion", "DESC")
+      .addOrderBy("reputation.rating_average", "DESC", "NULLS LAST")
+      .addOrderBy("reputation.review_count", "DESC", "NULLS LAST")
+      .addOrderBy("post.createdAt", "DESC")
+      .addOrderBy("post.id", "DESC");
+  }
+
+  private withListingReputation(
+    post: PostEntity,
+    raw: Record<string, unknown>,
+  ): PostEntity {
+    if (post.seller) {
+      Object.assign(post.seller, {
+        ratingAverage:
+          raw.sellerRatingAverage == null
+            ? null
+            : Number(raw.sellerRatingAverage),
+        reviewCount: Number(raw.sellerReviewCount ?? 0),
+        reputationLevel: raw.sellerReputationLevel,
+      });
+    }
+    return post;
   }
 
   private async ensureCategoryExists(

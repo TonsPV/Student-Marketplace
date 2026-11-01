@@ -57,10 +57,29 @@ describe("post location API contract", () => {
       deletedAt: null,
       location: { type: "Point", coordinates: [106.7009, 10.7769] },
     });
-    const query: Record<string, jest.Mock> = {};
-    for (const method of ["setLock", "where", "withDeleted"])
-      query[method] = jest.fn().mockReturnValue(query);
-    query.getOne = jest.fn().mockImplementation(async () => post);
+    // Universal chainable QueryBuilder stub: the Phase 4 listing path
+    // (findAll) and the transaction flows (update/markAsSold/restore) share
+    // this repository mock, so every chained method must return the builder.
+    const query: Record<string, jest.Mock> = new Proxy(
+      {} as Record<string, jest.Mock>,
+      {
+        get(target, prop: string) {
+          if (prop === "getOne")
+            return (target[prop] ??= jest
+              .fn()
+              .mockImplementation(async () => post));
+          if (prop === "getCount")
+            return (target[prop] ??= jest.fn(async () => 1));
+          if (prop === "getRawAndEntities")
+            return (target[prop] ??= jest.fn(
+              async () => ({ entities: [post], raw: [{}] }) as unknown,
+            ));
+          if (prop === "clone")
+            return (target[prop] ??= jest.fn(() => query));
+          return (target[prop] ??= jest.fn().mockReturnValue(query));
+        },
+      },
+    );
     repo = {
       create: jest
         .fn()
@@ -69,6 +88,7 @@ describe("post location API contract", () => {
       findAndCount: jest.fn().mockImplementation(async () => [[post], 1]),
       createQueryBuilder: jest.fn().mockReturnValue(query),
       restore: jest.fn(),
+      update: jest.fn(async () => ({})),
       findOneByOrFail: jest.fn().mockImplementation(async () => post),
       findOne: jest.fn().mockImplementation(async () => post),
       findOneBy: jest.fn().mockResolvedValue({ id: categoryId }),
