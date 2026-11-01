@@ -384,6 +384,7 @@ export class PaymentsService implements OnModuleInit {
               m.create(Promotion, {
                 postId: o.postId,
                 orderId: o.id,
+                createdById: o.ownerId,
                 startsAt,
                 endsAt: new Date(startsAt.getTime() + o.hours * 3600000),
               }),

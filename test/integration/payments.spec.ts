@@ -1,3 +1,4 @@
+import { PostExpiryAndPromotions1791830000000 } from "../../src/database/migrations/1791830000000-PostExpiryAndPromotions";
 jest.mock("@nestjs/schedule", () => ({ Cron: () => () => {} }));
 import { DataSource } from "typeorm";
 import { ConfigService } from "@nestjs/config";
@@ -35,6 +36,7 @@ describe("payment transactions", () => {
     try {
       await new PaymentsPromotions1791810000000().down(runner);
       await new PaymentsPromotions1791810000000().up(runner);
+      await new PostExpiryAndPromotions1791830000000().up(runner);
     } finally {
       await runner.release();
     }
@@ -341,16 +343,14 @@ describe("payment transactions", () => {
   });
   it("unsigned query errors and tampered responses never mark paid", async () => {
     const { order } = await fresh();
-    const mock = jest
-      .spyOn(global, "fetch")
-      .mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            vnp_ResponseCode: "99",
-            vnp_Message: "Unexpected error",
-          }),
-        ),
-      );
+    const mock = jest.spyOn(global, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          vnp_ResponseCode: "99",
+          vnp_Message: "Unexpected error",
+        }),
+      ),
+    );
     await s.reconcile();
     expect(await s.read(owner, order.id)).toMatchObject({ status: "pending" });
     mock.mockRestore();

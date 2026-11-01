@@ -1,4 +1,9 @@
-import { Inject, Injectable, Optional } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  Optional,
+  ForbiddenException,
+} from "@nestjs/common";
 import { EntityManager } from "typeorm";
 import { POST_QUOTA } from "./post-lifecycle.constants";
 
@@ -8,6 +13,7 @@ export interface PostingDecision {
   blockedUntil: Date | null;
   /** Effective quota can be reduced by reputation, never increased above 5. */
   limit: number;
+  denial?: ForbiddenException;
 }
 
 export interface PostingRestrictionPolicy {

@@ -1,3 +1,4 @@
+import { PostEntity } from "../../src/modules/posts/post.entity";
 import { ForbiddenException } from "@nestjs/common";
 import { PostingRestrictionEntity } from "../../src/modules/moderation/posting-restriction.entity";
 import { UserWarningEntity } from "../../src/modules/moderation/user-warning.entity";
@@ -138,5 +139,35 @@ describe("posting restriction enforcement (real DB)", () => {
     expect(lifted.liftedAt).toBeInstanceOf(Date);
     await expect(h.createPost(user)).resolves.toBeDefined();
     expect((await h.reload(user)).isLocked).toBe(false);
+  });
+  it("the shared posting policy blocks renewal and reports quota without consuming the free renewal", async () => {
+    const user = await h.newUser();
+    const post = await h.createPost(user);
+    await h.ds.getRepository(PostEntity).update(post.id, {
+      publishedAt: new Date(Date.now() - 15 * 86400000),
+      expiresAt: new Date(Date.now() - 1000),
+    });
+    const restriction = await restrict(user);
+    expect(await h.posts.quota(h.ctx(user))).toMatchObject({
+      postingAllowed: false,
+      canActivate: false,
+      reason: "Đăng spam",
+    });
+    await expect(h.posts.renew(post.id, h.ctx(user))).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(
+      (await h.ds.getRepository(PostEntity).findOneByOrFail({ id: post.id }))
+        .renewalCount,
+    ).toBe(0);
+    await h.moderation.liftPostingRestriction(
+      h.ctx(admin),
+      restriction.id,
+      "Đã kiểm tra",
+    );
+    await expect(h.posts.renew(post.id, h.ctx(user))).resolves.toMatchObject({
+      renewalCount: 1,
+      status: "active",
+    });
   });
 });

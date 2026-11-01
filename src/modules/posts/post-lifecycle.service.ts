@@ -47,7 +47,7 @@ export class PostLifecycleService {
     const seller = await manager
       .getRepository(UserEntity)
       .createQueryBuilder("seller")
-      .setLock("pessimistic_write")
+      .setLock("for_no_key_update")
       .where("seller.id = :sellerId", { sellerId })
       .getOne();
     if (!seller) throw new NotFoundException("Seller not found");
@@ -77,6 +77,7 @@ export class PostLifecycleService {
 
   private assertPostingAllowed(decision: PostingDecision) {
     if (!decision.allowed) {
+      if (decision.denial) throw decision.denial;
       throw new ForbiddenException({
         code: "POSTING_RESTRICTED",
         message: "Posting is restricted",
@@ -131,6 +132,15 @@ export class PostLifecycleService {
   }
 
   async create(dto: CreatePostDto, context: AuthenticatedContext) {
+    return this.transaction((manager) =>
+      this.createWithManager(manager, dto, context),
+    );
+  }
+  async createWithManager(
+    manager: EntityManager,
+    dto: CreatePostDto,
+    context: AuthenticatedContext,
+  ) {
     this.authorization.assertCreate(context, "Post", {
       sellerId: context.principal.id,
     });
@@ -142,41 +152,39 @@ export class PostLifecycleService {
         Math.abs(dto.location.longitude) > 180)
     )
       throw new BadRequestException("Invalid post location");
-    return this.transaction(async (manager) => {
-      await this.lockSeller(manager, context.principal.id);
-      const now = await this.now(manager);
-      await this.assertActivation(manager, context.principal.id, now);
-      if (
-        !(await manager
-          .getRepository(CategoryEntity)
-          .findOneBy({ id: dto.categoryId }))
-      ) {
-        throw new NotFoundException("Category not found");
-      }
-      const repo = manager.getRepository(PostEntity);
-      return repo.save(
-        repo.create({
-          sellerId: context.principal.id,
-          categoryId: dto.categoryId,
-          title: dto.title,
-          description: dto.description,
-          price: dto.price,
-          condition: dto.condition,
-          location:
-            dto.location == null
-              ? null
-              : {
-                  type: "Point",
-                  coordinates: [dto.location.longitude, dto.location.latitude],
-                },
-          locationName: dto.locationName ?? null,
-          status: PostStatus.ACTIVE,
-          publishedAt: now,
-          expiresAt: new Date(now.getTime() + POST_LIFETIME_DAYS * DAY_MS),
-          renewalCount: 0,
-        }),
-      );
-    });
+    await this.lockSeller(manager, context.principal.id);
+    const now = await this.now(manager);
+    await this.assertActivation(manager, context.principal.id, now);
+    if (
+      !(await manager
+        .getRepository(CategoryEntity)
+        .findOneBy({ id: dto.categoryId }))
+    ) {
+      throw new NotFoundException("Category not found");
+    }
+    const repo = manager.getRepository(PostEntity);
+    return repo.save(
+      repo.create({
+        sellerId: context.principal.id,
+        categoryId: dto.categoryId,
+        title: dto.title,
+        description: dto.description,
+        price: dto.price,
+        condition: dto.condition,
+        location:
+          dto.location == null
+            ? null
+            : {
+                type: "Point",
+                coordinates: [dto.location.longitude, dto.location.latitude],
+              },
+        locationName: dto.locationName ?? null,
+        status: PostStatus.ACTIVE,
+        publishedAt: now,
+        expiresAt: new Date(now.getTime() + POST_LIFETIME_DAYS * DAY_MS),
+        renewalCount: 0,
+      }),
+    );
   }
 
   private assertOwner(
@@ -202,28 +210,37 @@ export class PostLifecycleService {
   }
 
   async restore(id: string, context: AuthenticatedContext) {
-    return this.transaction(async (manager) => {
-      const repo = manager.getRepository(PostEntity);
-      const header = await repo.findOne({ where: { id }, withDeleted: true });
-      if (!header) throw new NotFoundException("Post not found");
-      this.assertOwner(context, header, "restore");
-      await this.lockSeller(manager, header.sellerId);
-      const post = await repo
-        .createQueryBuilder("post")
-        .withDeleted()
-        .setLock("pessimistic_write")
-        .where("post.id = :id", { id })
-        .getOneOrFail();
-      this.assertOwner(context, post, "restore");
-      if (!post.deletedAt) return post;
-      const now = await this.now(manager);
-      if (post.status === PostStatus.ACTIVE) {
-        if (post.expiresAt <= now) post.status = PostStatus.EXPIRED;
-        else await this.assertActivation(manager, post.sellerId, now);
-      }
-      post.deletedAt = null;
-      return repo.save(post);
-    });
+    return this.transaction((manager) =>
+      this.restoreWithManager(manager, id, context),
+    );
+  }
+  async restoreWithManager(
+    manager: EntityManager,
+    id: string,
+    context: AuthenticatedContext,
+  ) {
+    const repo = manager.getRepository(PostEntity);
+    const header = await repo.findOne({ where: { id }, withDeleted: true });
+    if (!header) throw new NotFoundException("Post not found");
+    this.assertOwner(context, header, "restore");
+    if (!header.deletedAt) return header;
+    await this.lockSeller(manager, header.sellerId);
+    const post = await repo
+      .createQueryBuilder("post")
+      .withDeleted()
+      .setLock("pessimistic_write")
+      .where("post.id = :id", { id })
+      .getOne();
+    if (!post) throw new NotFoundException("Post not found");
+    this.assertOwner(context, post, "restore");
+    if (!post.deletedAt) return post;
+    const now = await this.now(manager);
+    if (post.status === PostStatus.ACTIVE) {
+      if (post.expiresAt <= now) post.status = PostStatus.EXPIRED;
+      else await this.assertActivation(manager, post.sellerId, now);
+    }
+    post.deletedAt = null;
+    return repo.save(post);
   }
 
   async renewFree(id: string, context: AuthenticatedContext) {

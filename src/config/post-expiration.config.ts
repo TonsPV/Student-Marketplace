@@ -3,14 +3,9 @@ export type PostExpirationConfig = {
   durationDays: number;
 };
 
-/**
- * POLICY CẦN XÁC NHẬN (Phase 4 Step 2): repository chưa từng có chính sách
- * thời hạn bài đăng. Giá trị mặc định 30 ngày và biến môi trường
- * POST_EXPIRATION_DAYS là ĐỀ XUẤT của bước này, không phải chính sách đã
- * thống nhất. Không hardcode duration ở nơi khác — mọi nơi phải đọc config.
- */
+/** Legacy date helper. Activations use PostLifecycleService and the agreed 14-day policy. */
 const DEFAULT_POST_EXPIRATION_CONFIG: PostExpirationConfig = {
-  durationDays: 30,
+  durationDays: 14,
 };
 
 function parseNumber(raw: string | undefined, key: string, fallback: number) {
@@ -30,7 +25,11 @@ export function postExpirationConfig(
     "POST_EXPIRATION_DAYS",
     DEFAULT_POST_EXPIRATION_CONFIG.durationDays,
   );
-  if (!Number.isInteger(durationDays) || durationDays < 1 || durationDays > 365) {
+  if (
+    !Number.isInteger(durationDays) ||
+    durationDays < 1 ||
+    durationDays > 365
+  ) {
     throw new Error("Invalid POST_EXPIRATION_DAYS: must be an integer 1..365");
   }
   return { durationDays };
@@ -38,8 +37,7 @@ export function postExpirationConfig(
 
 /**
  * Quy ước hiệu lực: bài còn hiển thị khi `expiresAt > now`;
- * bài hết hạn khi `expiresAt <= now`. `expiresAt IS NULL` được coi là
- * còn hiệu lực (bài cũ trước policy — KHÔNG backfill ngày giả).
+ * bài hết hạn khi `expiresAt <= now`. PostLifecycle owns non-null deadlines.
  */
 export function postExpiresAt(
   now: Date,

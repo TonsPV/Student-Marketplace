@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { EntityManager, MoreThan, LessThanOrEqual } from "typeorm";
+import { EntityManager, MoreThan, LessThanOrEqual, IsNull } from "typeorm";
 import { PostEntity, PostStatus } from "../posts/post.entity";
 import { UserEntity } from "../user/user.entity";
 import { Promotion } from "../promotions/promotion.entity";
@@ -43,6 +43,7 @@ export class PromotionEligibilityService {
     const promotion = await m.findOne(Promotion, {
       where: {
         postId: post.id,
+        cancelledAt: IsNull(),
         startsAt: LessThanOrEqual(now),
         endsAt: MoreThan(now),
       },

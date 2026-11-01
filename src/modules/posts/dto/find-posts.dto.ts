@@ -1,3 +1,4 @@
+import { Transform } from "class-transformer";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 import { IsEnum, IsOptional, IsUUID } from "class-validator";
 import { PaginationDto } from "../../../common/dto/pagination.dto";
@@ -18,5 +19,12 @@ export class FindPostsDto extends PaginationDto {
   @ApiPropertyOptional({ enum: PostSort, default: PostSort.RECOMMENDED })
   @IsOptional()
   @IsEnum(PostSort)
+  @Transform(({ value }: { value: unknown }) =>
+    value === "newest"
+      ? PostSort.NEWEST
+      : value === "priority"
+        ? PostSort.RECOMMENDED
+        : value,
+  )
   sort?: PostSort = PostSort.RECOMMENDED;
 }

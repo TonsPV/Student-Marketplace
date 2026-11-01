@@ -38,9 +38,7 @@ export function reputationSubquery(schema: string): string {
              GROUP BY eligible_post.seller_id)`;
 }
 
-export function reputationCaseExpression(
-  config = reputationConfig(),
-): string {
+export function reputationCaseExpression(config = reputationConfig()): string {
   return `CASE
               WHEN COALESCE(reputation.review_count, 0) = 0 THEN '${ReputationLevel.UNRATED}'
               WHEN reputation.review_count < ${config.minimumReviewCount} THEN '${ReputationLevel.INSUFFICIENT_DATA}'
@@ -64,24 +62,18 @@ export function reputationPriorityExpression(
               ELSE 0 END`;
 }
 
-/**
- * Active-promotion boost (1/0) per post, evaluated in the database.
- * EXISTS — never a JOIN — so multiple promotion records of one post cannot
- * duplicate the post in results. Active means `starts_at <= now < ends_at`
- * and not cancelled; SCHEDULED/EXPIRED/CANCELLED never boost. Every listing
- * query binds `:listingNow` once per request via the expiry predicate.
- */
+/** Live campaigns use the same database clock as expiry. EXISTS avoids duplicate posts. */
 export function activePromotionExpression(schema: string): string {
   const promotions = qualifiedTableName(schema, "post_promotions");
   return `CASE WHEN EXISTS (
             SELECT 1 FROM ${promotions} active_promotion
-             WHERE active_promotion.post_id = post.id
+             WHERE active_promotion."postId" = post.id
                AND active_promotion.cancelled_at IS NULL
-               AND active_promotion.starts_at <= :listingNow
-               AND active_promotion.ends_at > :listingNow
+               AND active_promotion."startsAt" <= statement_timestamp()
+               AND active_promotion."endsAt" > statement_timestamp()
           ) THEN 1 ELSE 0 END`;
 }
 
 /** Listing eligibility: a post is visible while `expiresAt > now`. */
 export const LISTING_EXPIRY_PREDICATE =
-  "(post.expires_at IS NULL OR post.expires_at > :listingNow)";
+  "(post.expires_at > statement_timestamp())";

@@ -1,4 +1,7 @@
-import { PaymentOrder, PaymentRequest } from "../../src/modules/payments/payment.entity";
+import {
+  PaymentOrder,
+  PaymentRequest,
+} from "../../src/modules/payments/payment.entity";
 import { Promotion } from "../../src/modules/promotions/promotion.entity";
 import "reflect-metadata";
 import { config } from "dotenv";
@@ -22,7 +25,6 @@ import { ReviewEditHistoryEntity } from "../../src/modules/reviews/review-edit-h
 import { PasswordResetChallengeEntity } from "../../src/modules/auth/password-reset-challenge.entity";
 import { UserWarningEntity } from "../../src/modules/moderation/user-warning.entity";
 import { PostingRestrictionEntity } from "../../src/modules/moderation/posting-restriction.entity";
-import { PostPromotionEntity } from "../../src/modules/posts/post-promotion.entity";
 import { PostSearchUnaccent1791760000000 } from "../../src/database/migrations/1791760000000-PostSearchUnaccent";
 
 const ownedSchemas = new Set<string>();
@@ -79,7 +81,6 @@ export function createTestDataSource(): DataSource {
       NotificationEntity,
       UserWarningEntity,
       PostingRestrictionEntity,
-      PostPromotionEntity,
     ],
   });
 }

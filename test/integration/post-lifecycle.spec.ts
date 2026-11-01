@@ -93,6 +93,7 @@ describe("post quota, expiry and renewal (PostgreSQL)", () => {
       undefined,
       undefined,
       undefined,
+      undefined,
       lifecycle,
     );
     notifications = new NotificationsService(

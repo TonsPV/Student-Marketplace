@@ -16,6 +16,7 @@ import { StorageService } from "../../src/modules/storage/storage.service";
 import { ModerationService } from "../../src/modules/moderation/moderation.service";
 
 const allowPosting = {
+  getActivePostingRestrictions: jest.fn().mockResolvedValue([]),
   lockPostingUser: jest.fn().mockResolvedValue(new Date()),
   assertCanPost: jest.fn().mockResolvedValue(undefined),
   lockAndAssertCanPost: jest.fn().mockResolvedValue(undefined),
@@ -74,13 +75,13 @@ describe("post location API contract", () => {
             return (target[prop] ??= jest.fn(
               async () => ({ entities: [post], raw: [{}] }) as unknown,
             ));
-          if (prop === "clone")
-            return (target[prop] ??= jest.fn(() => query));
+          if (prop === "clone") return (target[prop] ??= jest.fn(() => query));
           return (target[prop] ??= jest.fn().mockReturnValue(query));
         },
       },
     );
     repo = {
+      countBy: jest.fn(async () => 0),
       create: jest
         .fn()
         .mockImplementation((value) => Object.assign(new PostEntity(), value)),
@@ -120,6 +121,7 @@ describe("post location API contract", () => {
         transaction: async (...args: unknown[]) =>
           (args[args.length - 1] as (manager: unknown) => unknown)({
             getRepository: () => repo,
+            query: async () => [{ now: new Date() }],
           }),
       } as unknown as DataSource,
       {} as StorageService,

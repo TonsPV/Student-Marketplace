@@ -78,14 +78,16 @@ describe("active promotion expression", () => {
     const sql = activePromotionExpression("public");
     expect(sql).toContain("EXISTS");
     expect(sql).not.toContain("JOIN");
-    expect(sql).toContain("active_promotion.post_id = post.id");
+    expect(sql).toContain('active_promotion."postId" = post.id');
   });
 
   it("only boosts the ACTIVE window (not scheduled, expired or cancelled)", () => {
     const sql = activePromotionExpression("public");
     expect(sql).toContain("active_promotion.cancelled_at IS NULL");
-    expect(sql).toContain("active_promotion.starts_at <= :listingNow");
-    expect(sql).toContain("active_promotion.ends_at > :listingNow");
+    expect(sql).toContain(
+      'active_promotion."startsAt" <= statement_timestamp()',
+    );
+    expect(sql).toContain('active_promotion."endsAt" > statement_timestamp()');
   });
 
   it("schema-qualifies the promotions table", () => {
@@ -118,10 +120,10 @@ describe("reputation subquery", () => {
 });
 
 describe("listing expiry predicate", () => {
-  it("treats NULL lifetime as valid and expired-at-now as excluded", () => {
+  it("excludes NULL and expired-at-now lifetimes", () => {
     // Valid while expires_at > now; NULL (legacy rows, no backfill) is valid.
     expect(LISTING_EXPIRY_PREDICATE).toBe(
-      "(post.expires_at IS NULL OR post.expires_at > :listingNow)",
+      "(post.expires_at > statement_timestamp())",
     );
   });
 });

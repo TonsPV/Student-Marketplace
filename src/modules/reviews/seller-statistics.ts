@@ -1,4 +1,4 @@
-import { DataSource } from "typeorm";
+import { DataSource, Raw } from "typeorm";
 import { reputationConfig } from "../../config/reputation.config";
 import { PostEntity, PostStatus } from "../posts/post.entity";
 import { ReviewEntity } from "./review.entity";
@@ -55,13 +55,11 @@ export async function sellerStatistics(
       .select("ROUND(AVG(review.rating)::numeric, 1)", "ratingAverage")
       .addSelect("COUNT(review.id)", "reviewCount")
       .getRawOne<{ ratingAverage: string | null; reviewCount: string }>(),
-    dataSource
-      .getRepository(PostEntity)
-      .countBy({
-        sellerId,
-        status: PostStatus.ACTIVE,
-        expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
-      }),
+    dataSource.getRepository(PostEntity).countBy({
+      sellerId,
+      status: PostStatus.ACTIVE,
+      expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
+    }),
     dataSource
       .getRepository(PostEntity)
       .countBy({ sellerId, status: PostStatus.SOLD }),
