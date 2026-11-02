@@ -1,3 +1,13 @@
+/**
+ * MODULE: STORAGE & CẤU HÌNH
+ *
+ * WORD TEST CASES:
+ * - TC-R2-01: Env hợp lệ → TTL mặc định 300/900 giây, dung lượng tối đa 5MB
+ * - TC-R2-02: Thiếu credentials/bucket/endpoint → ném lỗi khi khởi động
+ * - TC-R2-03: Endpoint phải là S3 account endpoint, không phải domain công khai
+ * - TC-R2-04: TTL/size sai định dạng → ném lỗi, không fallback âm thầm
+ */
+
 import "reflect-metadata";
 import { r2Config, uploadConfig } from "src/config/r2.config";
 
@@ -37,7 +47,9 @@ afterEach(() => {
 });
 
 describe("r2/upload config startup validation (S9)", () => {
-  it("env hợp lệ → default TTL 300/900, size 5MB", () => {
+  // [WORD-TC: TC-R2-01]
+  // Chức năng: Env hợp lệ → TTL mặc định 300/900 giây, dung lượng tối đa 5MB
+  it("[TC-R2-01] Env hợp lệ → TTL mặc định 300/900 giây, dung lượng tối đa 5MB", () => {
     const r2 = r2Config();
     expect(r2.bucketName).toBe("chat-private");
     const upload = uploadConfig();
@@ -46,7 +58,9 @@ describe("r2/upload config startup validation (S9)", () => {
     expect(upload.maxFileSizeBytes).toBe(5 * 1024 * 1024);
   });
 
-  it("thiếu credentials/bucket/endpoint → throw", () => {
+  // [WORD-TC: TC-R2-02]
+  // Chức năng: Thiếu credentials/bucket/endpoint → ném lỗi khi khởi động
+  it("[TC-R2-02] Thiếu credentials/bucket/endpoint → ném lỗi khi khởi động", () => {
     for (const key of [
       "R2_ACCESS_KEY_ID",
       "R2_SECRET_ACCESS_KEY",
@@ -62,7 +76,9 @@ describe("r2/upload config startup validation (S9)", () => {
     expect(() => r2Config()).toThrow();
   });
 
-  it("endpoint phải là account S3 endpoint, không phải public domain", () => {
+  // [WORD-TC: TC-R2-03]
+  // Chức năng: Endpoint phải là S3 account endpoint, không phải domain công khai
+  it("[TC-R2-03] Endpoint phải là S3 account endpoint, không phải domain công khai", () => {
     process.env.R2_ENDPOINT_URL = "https://pub-xyz.r2.dev";
     expect(() => r2Config()).toThrow();
     process.env.R2_ENDPOINT_URL = "http://abc.r2.cloudflarestorage.com";
@@ -71,7 +87,9 @@ describe("r2/upload config startup validation (S9)", () => {
     expect(() => r2Config()).toThrow();
   });
 
-  it("TTL/size malformed → throw, không silent fallback", () => {
+  // [WORD-TC: TC-R2-04]
+  // Chức năng: TTL/size sai định dạng → ném lỗi, không fallback âm thầm
+  it("[TC-R2-04] TTL/size sai định dạng → ném lỗi, không fallback âm thầm", () => {
     for (const bad of ["0", "-5", "1.5", "abc", "604801", "NaN"]) {
       process.env.SIGNED_URL_EXPIRES_SEC = bad;
       expect(() => uploadConfig()).toThrow();

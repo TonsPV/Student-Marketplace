@@ -1,3 +1,12 @@
+/**
+ * MODULE: REVIEWS (ĐÁNH GIÁ NGƯỜI BÁN)
+ *
+ * WORD TEST CASES:
+ * - TC-REP-01: Trả về UNRATED và INSUFFICIENT_DATA khi chưa đạt số review tối thiểu
+ * - TC-REP-02: Làm tròn HALF_UP trước khi phân loại điểm trung bình
+ * - TC-REP-03: Hỗ trợ cấu hình từ môi trường và kiểm tra tính hợp lệ
+ */
+
 import { reputationConfig } from "../../src/config/reputation.config";
 import {
   calculateReputationLevel,
@@ -7,7 +16,9 @@ import { ReputationLevel } from "../../src/modules/reviews/reputation-level";
 
 const config = reputationConfig({});
 
-test("uses UNRATED and INSUFFICIENT_DATA before the minimum count", () => {
+// [WORD-TC: TC-REP-01]
+// Chức năng: Trả về UNRATED và INSUFFICIENT_DATA khi chưa đạt số review tối thiểu
+test("[TC-REP-01] Trả về UNRATED và INSUFFICIENT_DATA khi chưa đạt số review tối thiểu", () => {
   expect(calculateReputationLevel(0, null, config)).toBe(
     ReputationLevel.UNRATED,
   );
@@ -16,7 +27,9 @@ test("uses UNRATED and INSUFFICIENT_DATA before the minimum count", () => {
   );
 });
 
-test("rounds HALF_UP before classifying eligible averages", () => {
+// [WORD-TC: TC-REP-02]
+// Chức năng: Làm tròn HALF_UP trước khi phân loại điểm trung bình
+test("[TC-REP-02] Làm tròn HALF_UP trước khi phân loại điểm trung bình", () => {
   expect(roundRatingAverage(2.94)).toBe(2.9);
   expect(roundRatingAverage(2.95)).toBe(3);
   expect(roundRatingAverage(3.94)).toBe(3.9);
@@ -31,7 +44,9 @@ test("rounds HALF_UP before classifying eligible averages", () => {
   );
 });
 
-test("supports validated environment configuration", () => {
+// [WORD-TC: TC-REP-03]
+// Chức năng: Hỗ trợ cấu hình từ môi trường và kiểm tra tính hợp lệ
+test("[TC-REP-03] Hỗ trợ cấu hình từ môi trường và kiểm tra tính hợp lệ", () => {
   expect(
     reputationConfig({
       REPUTATION_MIN_REVIEW_COUNT: "4",

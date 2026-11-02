@@ -1,3 +1,13 @@
+/**
+ * MODULE: CONVERSATIONS & MESSAGES
+ *
+ * WORD TEST CASES:
+ * - TC-CDEL-01: Chỉ ẩn phía buyer, idempotent, chỉ emit sau commit (không có notification)
+ * - TC-CDEL-02: Chỉ ẩn phía seller, idempotent, chỉ emit sau commit (không có notification)
+ * - TC-CDEL-03: Chỉ ẩn phía buyer, idempotent, chỉ emit sau commit (có notification)
+ * - TC-CDEL-04: Chỉ ẩn phía seller, idempotent, chỉ emit sau commit (có notification)
+ */
+
 import "reflect-metadata";
 import { ForbiddenException } from "@nestjs/common";
 import { DataSource } from "typeorm";
@@ -23,13 +33,21 @@ describe("participant conversation deletion", () => {
       fullName: "Test",
       isAdmin: false,
     });
+  // [WORD-TC: TC-CDEL-01]
+  // Chức năng: Chỉ ẩn phía buyer, idempotent, chỉ emit sau commit (không có notification)
+  // [WORD-TC: TC-CDEL-02]
+  // Chức năng: Chỉ ẩn phía seller, idempotent, chỉ emit sau commit (không có notification)
+  // [WORD-TC: TC-CDEL-03]
+  // Chức năng: Chỉ ẩn phía buyer, idempotent, chỉ emit sau commit (có notification)
+  // [WORD-TC: TC-CDEL-04]
+  // Chức năng: Chỉ ẩn phía seller, idempotent, chỉ emit sau commit (có notification)
   it.each([
     ["buyer", false],
     ["seller", false],
     ["buyer", true],
     ["seller", true],
   ] as const)(
-    "hides only %s, is idempotent, and emits only after commit (notification=%s)",
+    "[TC-CDEL] Chỉ ẩn phía %s, idempotent, chỉ phát socket sau commit (notification=%s)",
     async (actor, hasNotification) => {
       const conv = {
         id: "44444444-4444-4444-8444-444444444444",

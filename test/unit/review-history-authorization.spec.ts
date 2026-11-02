@@ -1,3 +1,13 @@
+/**
+ * MODULE: REVIEWS (ĐÁNH GIÁ NGƯỜI BÁN)
+ *
+ * WORD TEST CASES:
+ * - TC-RHIS-01: Reviewer đọc được lịch sử sau khi review bị soft-delete
+ * - TC-RHIS-02: Admin đọc được lịch sử sau khi review bị soft-delete
+ * - TC-RHIS-03: User khác và guest không đọc được lịch sử review
+ * - TC-RHIS-04: Review đã soft-delete vẫn bị ẩn khỏi API đọc chi tiết công khai
+ */
+
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ReviewsService } from "../../src/modules/reviews/reviews.service";
 import { ReviewEditHistoryEntity } from "../../src/modules/reviews/review-edit-history.entity";
@@ -53,7 +63,9 @@ function serviceWithDeletedReview() {
   return { authorization, service, historyRepository };
 }
 
-test("reviewer can read history after the review is soft-deleted", async () => {
+// [WORD-TC: TC-RHIS-01]
+// Chức năng: Reviewer đọc được lịch sử sau khi review bị soft-delete
+test("[TC-RHIS-01] Reviewer đọc được lịch sử sau khi review bị soft-delete", async () => {
   const { authorization, service } = serviceWithDeletedReview();
   const context = authorization.createAuthenticatedContext({
     id: OWNER,
@@ -65,7 +77,9 @@ test("reviewer can read history after the review is soft-deleted", async () => {
   await expect(service.findHistory(REVIEW, context)).resolves.toHaveLength(1);
 });
 
-test("admin can read history after the review is soft-deleted", async () => {
+// [WORD-TC: TC-RHIS-02]
+// Chức năng: Admin đọc được lịch sử sau khi review bị soft-delete
+test("[TC-RHIS-02] Admin đọc được lịch sử sau khi review bị soft-delete", async () => {
   const { authorization, service } = serviceWithDeletedReview();
   const context = authorization.createAuthenticatedContext({
     id: OTHER,
@@ -77,7 +91,9 @@ test("admin can read history after the review is soft-deleted", async () => {
   await expect(service.findHistory(REVIEW, context)).resolves.toHaveLength(1);
 });
 
-test("other users and guests cannot read review history", async () => {
+// [WORD-TC: TC-RHIS-03]
+// Chức năng: User khác và guest không đọc được lịch sử review
+test("[TC-RHIS-03] User khác và guest không đọc được lịch sử review", async () => {
   const { authorization, service } = serviceWithDeletedReview();
   const other = authorization.createAuthenticatedContext({
     id: OTHER,
@@ -95,7 +111,9 @@ test("other users and guests cannot read review history", async () => {
   ).rejects.toBeInstanceOf(ForbiddenException);
 });
 
-test("soft-deleted reviews remain hidden from public detail reads", async () => {
+// [WORD-TC: TC-RHIS-04]
+// Chức năng: Review đã soft-delete vẫn bị ẩn khỏi API đọc chi tiết công khai
+test("[TC-RHIS-04] Review đã soft-delete vẫn bị ẩn khỏi API đọc chi tiết công khai", async () => {
   const { authorization, service } = serviceWithDeletedReview();
 
   await expect(

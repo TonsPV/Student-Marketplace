@@ -1,3 +1,16 @@
+/**
+ * MODULE: MODERATION & POSTING RESTRICTIONS
+ *
+ * WORD TEST CASES:
+ * - TC-MSV-01: Từ chối: non-admin actors for every moderation action
+ * - TC-MSV-02: Từ chối: self-moderation, case-insensitively
+ * - TC-MSV-03: Yêu cầu: a non-blank reason and lift reason
+ * - TC-MSV-04: reason/liftReason bị cắt ở 1000 ký tự (sau khi trim)
+ * - TC-MSV-05: Từ chối actor do client cung cấp và các field không hợp lệ
+ * - TC-MSV-06: Validate UUID và cửa sổ thời gian của restriction
+ * - TC-MSV-07: Restriction không đụng vào khóa tài khoản, session, token hay xóa dữ liệu
+ */
+
 import "reflect-metadata";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -41,7 +54,9 @@ describe("ModerationService input validation (rejected before DB access)", () =>
   };
   afterAll(() => expect(transaction).not.toHaveBeenCalled());
 
-  it("rejects non-admin actors for every moderation action", async () => {
+  // [WORD-TC: TC-MSV-01]
+  // Chức năng: Từ chối: non-admin actors for every moderation action
+  it("[TC-MSV-01] Từ chối: non-admin actors for every moderation action", async () => {
     const user = ctx(USER, false);
     await expect(
       service.issueWarning(user, { userId: OTHER, reason: "x" }),
@@ -54,7 +69,9 @@ describe("ModerationService input validation (rejected before DB access)", () =>
     ).rejects.toThrow(ForbiddenException);
   });
 
-  it("rejects self-moderation, case-insensitively", async () => {
+  // [WORD-TC: TC-MSV-02]
+  // Chức năng: Từ chối: self-moderation, case-insensitively
+  it("[TC-MSV-02] Từ chối: self-moderation, case-insensitively", async () => {
     await expect(
       service.issueWarning(admin, { userId: ADMIN, reason: "x" }),
     ).rejects.toThrow("You cannot moderate your own account");
@@ -66,7 +83,9 @@ describe("ModerationService input validation (rejected before DB access)", () =>
     ).rejects.toThrow("You cannot moderate your own account");
   });
 
-  it("requires a non-blank reason and lift reason", async () => {
+  // [WORD-TC: TC-MSV-03]
+  // Chức năng: Yêu cầu: a non-blank reason and lift reason
+  it("[TC-MSV-03] Yêu cầu: a non-blank reason and lift reason", async () => {
     await expect(
       service.issueWarning(admin, { userId: USER, reason: "   " }),
     ).rejects.toThrow("reason is required");
@@ -78,7 +97,9 @@ describe("ModerationService input validation (rejected before DB access)", () =>
     ).rejects.toThrow("liftReason is required");
   });
 
-  it("D3: caps reason and lift reason at 1000 characters (after trim)", async () => {
+  // [WORD-TC: TC-MSV-04]
+  // Chức năng: reason/liftReason bị cắt ở 1000 ký tự (sau khi trim)
+  it("[TC-MSV-04] reason/liftReason bị cắt ở 1000 ký tự (sau khi trim)", async () => {
     const long = "a".repeat(1001);
     await expect(
       service.issueWarning(admin, { userId: USER, reason: long }),
@@ -91,7 +112,9 @@ describe("ModerationService input validation (rejected before DB access)", () =>
     ).rejects.toThrow("liftReason must be at most 1000 characters");
   });
 
-  it("does not accept a client-supplied actor or unknown fields", async () => {
+  // [WORD-TC: TC-MSV-05]
+  // Chức năng: Từ chối actor do client cung cấp và các field không hợp lệ
+  it("[TC-MSV-05] Từ chối actor do client cung cấp và các field không hợp lệ", async () => {
     await expect(
       service.issueWarning(admin, {
         userId: USER,
@@ -107,7 +130,9 @@ describe("ModerationService input validation (rejected before DB access)", () =>
     ).rejects.toThrow("Unknown moderation field: liftedAt");
   });
 
-  it("validates ids and the restriction window", async () => {
+  // [WORD-TC: TC-MSV-06]
+  // Chức năng: Validate UUID và cửa sổ thời gian của restriction
+  it("[TC-MSV-06] Validate UUID và cửa sổ thời gian của restriction", async () => {
     await expect(
       service.issueWarning(admin, { userId: "not-a-uuid", reason: "x" }),
     ).rejects.toThrow(BadRequestException);
@@ -135,7 +160,9 @@ describe("ModerationService input validation (rejected before DB access)", () =>
     ).rejects.toThrow("restrictionId must be a UUID");
   });
 
-  it("source never touches account lock, sessions, tokens or deletes", () => {
+  // [WORD-TC: TC-MSV-07]
+  // Chức năng: Restriction không đụng vào khóa tài khoản, session, token hay xóa dữ liệu
+  it("[TC-MSV-07] Restriction không đụng vào khóa tài khoản, session, token hay xóa dữ liệu", () => {
     const source = readFileSync(
       join(__dirname, "../../src/modules/moderation/moderation.service.ts"),
       "utf8",

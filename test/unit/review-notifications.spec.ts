@@ -1,3 +1,19 @@
+/**
+ * MODULE: NOTIFICATIONS (THÔNG BÁO)
+ *
+ * WORD TEST CASES:
+ * - TC-RNOT-01: Đánh dấu lời mời review đã đọc và vô hiệu hóa mọi tab hợp lệ của user
+ * - TC-RNOT-02: Đọc lặp không thay đổi gì → không emit
+ * - TC-RNOT-03: Từ chối notification không thuộc sở hữu của người gọi
+ * - TC-RNOT-04: Đọc notification hết hạn mà không nhầm postId thành conversationId
+ * - TC-RNOT-05: Đọc notification review và chỉ emit sau khi transaction commit
+ * - TC-RNOT-06: Đếm đồng thời read tin nhắn và review mà vẫn giữ chat snapshot
+ * - TC-RNOT-07: read-all không thay đổi gì → không emit
+ * - TC-RNOT-08: read-all khi transaction thất bại → không emit
+ * - TC-RNOT-09: Đọc đơn vẫn thành công dù realtime ném lỗi
+ * - TC-RNOT-10: Đọc tất cả vẫn thành công dù realtime ném lỗi
+ */
+
 import "reflect-metadata";
 import { Logger, NotFoundException } from "@nestjs/common";
 import { DataSource, Not, Repository } from "typeorm";
@@ -77,7 +93,9 @@ describe("review notification reads", () => {
     };
   }
 
-  it("marks a review invitation read and invalidates all eligible user tabs", async () => {
+  // [WORD-TC: TC-RNOT-01]
+  // Chức năng: Đánh dấu lời mời review đã đọc và vô hiệu hóa mọi tab hợp lệ của user
+  it("[TC-RNOT-01] Đánh dấu lời mời review đã đọc và vô hiệu hóa mọi tab hợp lệ của user", async () => {
     const { service, repository, realtime, conversations } = setup();
     await expect(service.markOneAsRead(context, NOTIFICATION)).resolves.toEqual(
       { updated: 1, snapshots: [] },
@@ -94,7 +112,9 @@ describe("review notification reads", () => {
     expect(conversations.lockForAction).not.toHaveBeenCalled();
   });
 
-  it("does not emit when a repeated single read changes nothing", async () => {
+  // [WORD-TC: TC-RNOT-02]
+  // Chức năng: Đọc lặp không thay đổi gì → không emit
+  it("[TC-RNOT-02] Đọc lặp không thay đổi gì → không emit", async () => {
     const { service, realtime } = setup(0);
     await expect(service.markOneAsRead(context, NOTIFICATION)).resolves.toEqual(
       { updated: 0, snapshots: [] },
@@ -102,7 +122,9 @@ describe("review notification reads", () => {
     expect(realtime.emitToUser).not.toHaveBeenCalled();
   });
 
-  it("rejects a notification not owned by the caller", async () => {
+  // [WORD-TC: TC-RNOT-03]
+  // Chức năng: Từ chối notification không thuộc sở hữu của người gọi
+  it("[TC-RNOT-03] Từ chối notification không thuộc sở hữu của người gọi", async () => {
     const { service, repository, realtime } = setup();
     repository.findOneBy.mockResolvedValue(null);
     await expect(
@@ -116,7 +138,9 @@ describe("review notification reads", () => {
     expect(realtime.emitToUser).not.toHaveBeenCalled();
   });
 
-  it("reads an expiry notification without treating its post ID as a conversation", async () => {
+  // [WORD-TC: TC-RNOT-04]
+  // Chức năng: Đọc notification hết hạn mà không nhầm postId thành conversationId
+  it("[TC-RNOT-04] Đọc notification hết hạn mà không nhầm postId thành conversationId", async () => {
     const state = setup();
     state.repository.findOneBy.mockResolvedValue(
       Object.assign(new NotificationEntity(), {
@@ -135,7 +159,9 @@ describe("review notification reads", () => {
     );
   });
 
-  it("reads review-only notifications and emits after transaction commit", async () => {
+  // [WORD-TC: TC-RNOT-05]
+  // Chức năng: Đọc notification review và chỉ emit sau khi transaction commit
+  it("[TC-RNOT-05] Đọc notification review và chỉ emit sau khi transaction commit", async () => {
     const state = setup(2);
     state.realtime.emitToUser.mockImplementation(() => {
       expect(state.committed()).toBe(true);
@@ -156,7 +182,9 @@ describe("review notification reads", () => {
     expect(state.conversations.lockForAction).not.toHaveBeenCalled();
   });
 
-  it("counts mixed message and review reads while preserving chat snapshots", async () => {
+  // [WORD-TC: TC-RNOT-06]
+  // Chức năng: Đếm đồng thời read tin nhắn và review mà vẫn giữ chat snapshot
+  it("[TC-RNOT-06] Đếm đồng thời read tin nhắn và review mà vẫn giữ chat snapshot", async () => {
     const state = setup(2);
     const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
     state.repository.query.mockResolvedValue([{ ref_id: conversationId }]);
@@ -192,7 +220,9 @@ describe("review notification reads", () => {
     );
   });
 
-  it("does not emit for read-all when nothing changes", async () => {
+  // [WORD-TC: TC-RNOT-07]
+  // Chức năng: read-all không thay đổi gì → không emit
+  it("[TC-RNOT-07] read-all không thay đổi gì → không emit", async () => {
     const { service, realtime } = setup(0);
     await expect(service.markAllAsRead(context)).resolves.toEqual({
       updated: 0,
@@ -201,7 +231,9 @@ describe("review notification reads", () => {
     expect(realtime.emitToUser).not.toHaveBeenCalled();
   });
 
-  it("does not emit when the read-all transaction fails", async () => {
+  // [WORD-TC: TC-RNOT-08]
+  // Chức năng: read-all khi transaction thất bại → không emit
+  it("[TC-RNOT-08] read-all khi transaction thất bại → không emit", async () => {
     const state = setup();
     state.reviewUpdate.mockRejectedValue(new Error("database failure"));
     await expect(state.service.markAllAsRead(context)).rejects.toThrow(
@@ -211,8 +243,12 @@ describe("review notification reads", () => {
     expect(state.realtime.emitToUser).not.toHaveBeenCalled();
   });
 
+  // [WORD-TC: TC-RNOT-09]
+  // Chức năng: Đọc đơn vẫn thành công dù realtime ném lỗi
+  // [WORD-TC: TC-RNOT-10]
+  // Chức năng: Đọc tất cả vẫn thành công dù realtime ném lỗi
   it.each(["single", "all"])(
-    "keeps the %s read successful if realtime throws",
+    "[TC-RNOT] Thao tác đọc thông báo (%s) vẫn thành công dù realtime gặp lỗi",
     async (mode) => {
       const state = setup();
       state.realtime.emitToUser.mockImplementation(() => {

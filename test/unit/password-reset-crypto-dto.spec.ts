@@ -1,3 +1,19 @@
+/**
+ * MODULE: AUTHENTICATION & PHIÊN ĐĂNG NHẬP
+ *
+ * WORD TEST CASES:
+ * - TC-PRC-01: Sinh OTP 6 chữ số ASCII và token ngẫu nhiên 32 byte
+ * - TC-PRC-02: OTP được liên kết (bind) với cả challenge và secret
+ * - TC-PRC-03: Chấp nhận OTP có số 0 đầu; chỉ trim whitespace ở email
+ * - TC-PRC-04: Từ chối: malformed OTP 123456
+ * - TC-PRC-05: Từ chối: malformed OTP "12345"
+ * - TC-PRC-06: Từ chối: malformed OTP "1234567"
+ * - TC-PRC-07: Từ chối: malformed OTP "+12345"
+ * - TC-PRC-08: Từ chối: malformed OTP "１２３４５６"
+ * - TC-PRC-09: Từ chối: malformed OTP "12345 "
+ * - TC-PRC-10: Ràng buộc giới hạn 72 byte của bcrypt, kể cả mật khẩu nhiều byte
+ */
+
 import { plainToInstance } from "class-transformer";
 import { validate } from "class-validator";
 import {
@@ -15,14 +31,18 @@ import {
 
 describe("password reset secrets and validation", () => {
   const secret = "test-secret-".repeat(4);
-  it("generates six ASCII digits and 32-byte opaque tokens", () => {
+  // [WORD-TC: TC-PRC-01]
+  // Chức năng: Sinh OTP 6 chữ số ASCII và token ngẫu nhiên 32 byte
+  it("[TC-PRC-01] Sinh OTP 6 chữ số ASCII và token ngẫu nhiên 32 byte", () => {
     for (let i = 0; i < 100; i++) expect(createOtp()).toMatch(/^[0-9]{6}$/);
     const token = createResetToken();
     expect(Buffer.from(token, "base64url")).toHaveLength(32);
     expect(hashResetToken(token)).toMatch(/^[a-f0-9]{64}$/);
     expect(createResetToken()).not.toBe(token);
   });
-  it("binds OTPs to both the challenge and the secret", () => {
+  // [WORD-TC: TC-PRC-02]
+  // Chức năng: OTP được liên kết (bind) với cả challenge và secret
+  it("[TC-PRC-02] OTP được liên kết (bind) với cả challenge và secret", () => {
     const stored = hashOtp(secret, "challenge-a", "012345");
     expect(stored).not.toContain("012345");
     expect(otpMatches(secret, "challenge-a", "012345", stored)).toBe(true);
@@ -33,7 +53,9 @@ describe("password reset secrets and validation", () => {
     expect(otpMatches(secret, "challenge-a", "012346", stored)).toBe(false);
     expect(otpMatches(secret, "challenge-a", "012345", "invalid")).toBe(false);
   });
-  it("accepts leading zeroes and trims only email whitespace", async () => {
+  // [WORD-TC: TC-PRC-03]
+  // Chức năng: Chấp nhận OTP có số 0 đầu; chỉ trim whitespace ở email
+  it("[TC-PRC-03] Chấp nhận OTP có số 0 đầu; chỉ trim whitespace ở email", async () => {
     const dto = plainToInstance(VerifyOtpDto, {
       email: " Student@example.com ",
       otp: "012345",
@@ -44,8 +66,20 @@ describe("password reset secrets and validation", () => {
       await validate(plainToInstance(SendResetPasswordDto, { email: "bad" })),
     ).not.toEqual([]);
   });
+  // [WORD-TC: TC-PRC-04]
+  // Chức năng: Từ chối: malformed OTP 123456
+  // [WORD-TC: TC-PRC-05]
+  // Chức năng: Từ chối: malformed OTP "12345"
+  // [WORD-TC: TC-PRC-06]
+  // Chức năng: Từ chối: malformed OTP "1234567"
+  // [WORD-TC: TC-PRC-07]
+  // Chức năng: Từ chối: malformed OTP "+12345"
+  // [WORD-TC: TC-PRC-08]
+  // Chức năng: Từ chối: malformed OTP "１２３４５６"
+  // [WORD-TC: TC-PRC-09]
+  // Chức năng: Từ chối: malformed OTP "12345 "
   it.each([123456, "12345", "1234567", "+12345", "１２３４５６", "12345 "])(
-    "rejects malformed OTP %p",
+    "[TC-PRC] Từ chối mã OTP sai định dạng: %p",
     async (otp) => {
       expect(
         await validate(
@@ -54,7 +88,9 @@ describe("password reset secrets and validation", () => {
       ).not.toEqual([]);
     },
   );
-  it("enforces bcrypt's byte limit, including multibyte passwords", async () => {
+  // [WORD-TC: TC-PRC-10]
+  // Chức năng: Ràng buộc giới hạn 72 byte của bcrypt, kể cả mật khẩu nhiều byte
+  it("[TC-PRC-10] Ràng buộc giới hạn 72 byte của bcrypt, kể cả mật khẩu nhiều byte", async () => {
     const input = {
       resetToken: createResetToken(),
       newPassword: "a".repeat(72),

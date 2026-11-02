@@ -1,3 +1,15 @@
+/**
+ * MODULE: POSTS (VÒNG ĐỜI TIN ĐĂNG)
+ *
+ * WORD TEST CASES:
+ * - TC-PLO-01: Kiểm tra hợp lệ: named coordinates in [Function CreatePostDto]
+ * - TC-PLO-02: Kiểm tra hợp lệ: named coordinates in [Function UpdatePostDto]
+ * - TC-PLO-03: Tạo GeoJSON DB đúng thứ tự kinh độ–vĩ độ và trả về tọa độ có tên
+ * - TC-PLO-04: Phân quyền field lồng nhau; cập nhật/giữ nguyên/xóa location đã lưu đúng ý định
+ * - TC-PLO-05: Serialize danh sách/tin bán/restore không làm thay đổi entity DB (không mutation)
+ * - TC-PLO-06: Từ chối: malformed coordinates even for direct service callers
+ */
+
 import "reflect-metadata";
 import { ValidationPipe } from "@nestjs/common";
 import { DataSource, Repository } from "typeorm";
@@ -129,8 +141,12 @@ describe("post location API contract", () => {
     );
   });
 
+  // [WORD-TC: TC-PLO-01]
+  // Chức năng: Kiểm tra hợp lệ: named coordinates in [Function CreatePostDto]
+  // [WORD-TC: TC-PLO-02]
+  // Chức năng: Kiểm tra hợp lệ: named coordinates in [Function UpdatePostDto]
   it.each([CreatePostDto, UpdatePostDto])(
-    "validates named coordinates in %p",
+    "[TC-PLO] Kiểm tra hợp lệ tọa độ vị trí trong DTO %p",
     async (metatype) => {
       const payload = metatype === CreatePostDto ? body : {};
       for (const point of [
@@ -164,7 +180,9 @@ describe("post location API contract", () => {
     },
   );
 
-  it("creates DB GeoJSON in longitude/latitude order and returns named coordinates", async () => {
+  // [WORD-TC: TC-PLO-03]
+  // Chức năng: Tạo GeoJSON DB đúng thứ tự kinh độ–vĩ độ và trả về tọa độ có tên
+  it("[TC-PLO-03] Tạo GeoJSON DB đúng thứ tự kinh độ–vĩ độ và trả về tọa độ có tên", async () => {
     const result = await service.create({ ...body, location }, context);
     expect(repo.save.mock.calls[0][0].location).toEqual({
       type: "Point",
@@ -174,7 +192,9 @@ describe("post location API contract", () => {
     expect((await service.create(body, context)).location).toBeNull();
   });
 
-  it("authorizes nested fields and updates, preserves or clears stored location", async () => {
+  // [WORD-TC: TC-PLO-04]
+  // Chức năng: Phân quyền field lồng nhau; cập nhật/giữ nguyên/xóa location đã lưu đúng ý định
+  it("[TC-PLO-04] Phân quyền field lồng nhau; cập nhật/giữ nguyên/xóa location đã lưu đúng ý định", async () => {
     const next = { latitude: 0, longitude: 0 };
     expect(
       (await service.update(id, { location: next }, context)).location,
@@ -190,7 +210,9 @@ describe("post location API contract", () => {
     expect(post.location).toBeNull();
   });
 
-  it("serializes lists, favorites projection, sold and restore without mutating DB entities", async () => {
+  // [WORD-TC: TC-PLO-05]
+  // Chức năng: Serialize danh sách/tin bán/restore không làm thay đổi entity DB (không mutation)
+  it("[TC-PLO-05] Serialize danh sách/tin bán/restore không làm thay đổi entity DB (không mutation)", async () => {
     expect(
       (await service.findAll({ page: 1, limit: 10 }, context)).items[0]
         .location,
@@ -210,7 +232,9 @@ describe("post location API contract", () => {
     });
   });
 
-  it("rejects malformed coordinates even for direct service callers", async () => {
+  // [WORD-TC: TC-PLO-06]
+  // Chức năng: Từ chối: malformed coordinates even for direct service callers
+  it("[TC-PLO-06] Từ chối: malformed coordinates even for direct service callers", async () => {
     for (const point of [
       { latitude: NaN, longitude: 106 },
       { latitude: 10, longitude: Infinity },

@@ -1,3 +1,19 @@
+/**
+ * MODULE: AUTHORIZATION (CASL & GUARDS)
+ *
+ * WORD TEST CASES:
+ * - TC-CASL-01: Guest chỉ được phép đọc dữ liệu public (Post active/sold, Category, Review)
+ * - TC-CASL-02: Owner được update/delete/manageImages tin của mình; outsider và admin không được; admin vẫn giữ quyền hide phục vụ moderation
+ * - TC-CASL-03: Buyer/seller của hội thoại được phép thao tác; outsider và admin không được phép
+ * - TC-CASL-04: Admin không thể tự khóa tài khoản mình nhưng khóa được user khác
+ * - TC-CASL-05: Gate theo subject-type có thể cho phép nhưng kiểm tra theo instance vẫn từ chối tin của seller khác
+ * - TC-CASL-06: Cho phép cập nhật title; từ chối field đặc quyền (sellerId, status)
+ * - TC-CASL-07: toPostProjection/toUserProjection từ chối thiếu deletedAt; toConversationProjection ánh xạ đúng
+ * - TC-CASL-08: effectivePatch giữ giá trị null, loại bỏ undefined
+ * - TC-CASL-09: Từ chối key __proto__ và key chứa dấu chấm (prototype pollution)
+ * - TC-CASL-10: Action không xác định bị từ chối mặc định (default deny)
+ */
+
 import { subject } from "@casl/ability";
 import { CaslAbilityFactory } from "../../src/modules/authorization/casl-ability.factory";
 import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
@@ -30,7 +46,9 @@ describe("CASL ability (spec U01-U10)", () => {
   const factory = new CaslAbilityFactory();
   const authorization = new AuthorizationService(factory);
 
-  test("U01 guest allows only public reads", () => {
+  // [WORD-TC: TC-CASL-01]
+  // Chức năng: Guest chỉ được phép đọc dữ liệu public (Post active/sold, Category, Review)
+  test("[TC-CASL-01] Guest chỉ được phép đọc dữ liệu public (Post active/sold, Category, Review)", () => {
     const guest = factory.createForActor(null);
     expect(
       guest.can("read", subject("Post", { status: "active", deletedAt: null })),
@@ -48,7 +66,9 @@ describe("CASL ability (spec U01-U10)", () => {
     expect(guest.can("read", "Notification")).toBe(false);
   });
 
-  test("U02 owner vs outsider vs admin-outsider on Post", () => {
+  // [WORD-TC: TC-CASL-02]
+  // Chức năng: Owner được update/delete/manageImages tin của mình; outsider và admin không được; admin vẫn giữ quyền hide phục vụ moderation
+  test("[TC-CASL-02] Owner được update/delete/manageImages tin của mình; outsider và admin không được; admin vẫn giữ quyền hide phục vụ moderation", () => {
     const seller = factory.createForActor(principal({ id: SELLER_ID }));
     const outsider = factory.createForActor(principal({ id: OUTSIDER_ID }));
     const admin = factory.createForActor(
@@ -70,7 +90,9 @@ describe("CASL ability (spec U01-U10)", () => {
     expect(admin.can("hide", subject("Post", { id: POST_ID }))).toBe(true);
   });
 
-  test("U03 participants allow, outsiders deny on Conversation", () => {
+  // [WORD-TC: TC-CASL-03]
+  // Chức năng: Buyer/seller của hội thoại được phép thao tác; outsider và admin không được phép
+  test("[TC-CASL-03] Buyer/seller của hội thoại được phép thao tác; outsider và admin không được phép", () => {
     const buyerAbility = factory.createForActor(principal({ id: BUYER_ID }));
     const sellerAbility = factory.createForActor(principal({ id: SELLER_ID }));
     const outsiderAbility = factory.createForActor(
@@ -108,7 +130,9 @@ describe("CASL ability (spec U01-U10)", () => {
     }
   });
 
-  test("U04 admin self lock denied, lock other allowed", () => {
+  // [WORD-TC: TC-CASL-04]
+  // Chức năng: Admin không thể tự khóa tài khoản mình nhưng khóa được user khác
+  test("[TC-CASL-04] Admin không thể tự khóa tài khoản mình nhưng khóa được user khác", () => {
     const adminAbility = factory.createForActor(
       principal({ id: ADMIN_ID, isAdmin: true }),
     );
@@ -141,7 +165,9 @@ describe("CASL ability (spec U01-U10)", () => {
     );
   });
 
-  test("U05 subject-type gate differs from instance check", () => {
+  // [WORD-TC: TC-CASL-05]
+  // Chức năng: Gate theo subject-type có thể cho phép nhưng kiểm tra theo instance vẫn từ chối tin của seller khác
+  test("[TC-CASL-05] Gate theo subject-type có thể cho phép nhưng kiểm tra theo instance vẫn từ chối tin của seller khác", () => {
     const outsiderCtx = authorization.createAuthenticatedContext(
       principal({ id: OUTSIDER_ID }),
     );
@@ -157,7 +183,9 @@ describe("CASL ability (spec U01-U10)", () => {
     ).toThrow();
   });
 
-  test("U06 field allowlist blocks privileged fields", () => {
+  // [WORD-TC: TC-CASL-06]
+  // Chức năng: Cho phép cập nhật title; từ chối field đặc quyền (sellerId, status)
+  test("[TC-CASL-06] Cho phép cập nhật title; từ chối field đặc quyền (sellerId, status)", () => {
     const sellerCtx = authorization.createAuthenticatedContext(
       principal({ id: SELLER_ID }),
     );
@@ -202,7 +230,9 @@ describe("CASL ability (spec U01-U10)", () => {
     ).toThrow();
   });
 
-  test("U07 projection mapping rejects missing deletedAt", () => {
+  // [WORD-TC: TC-CASL-07]
+  // Chức năng: toPostProjection/toUserProjection từ chối thiếu deletedAt; toConversationProjection ánh xạ đúng
+  test("[TC-CASL-07] toPostProjection/toUserProjection từ chối thiếu deletedAt; toConversationProjection ánh xạ đúng", () => {
     expect(() =>
       toPostProjection({ id: POST_ID, sellerId: SELLER_ID, status: "active" }),
     ).toThrow();
@@ -219,7 +249,9 @@ describe("CASL ability (spec U01-U10)", () => {
     ).toThrow();
   });
 
-  test("U08 null kept, undefined dropped in effective patch", () => {
+  // [WORD-TC: TC-CASL-08]
+  // Chức năng: effectivePatch giữ giá trị null, loại bỏ undefined
+  test("[TC-CASL-08] effectivePatch giữ giá trị null, loại bỏ undefined", () => {
     const patch = authorization.effectivePatch({
       rating: 5,
       comment: null,
@@ -228,7 +260,9 @@ describe("CASL ability (spec U01-U10)", () => {
     expect(patch).toEqual({ rating: 5, comment: null });
   });
 
-  test("U09 prototype/dotted keys rejected", () => {
+  // [WORD-TC: TC-CASL-09]
+  // Chức năng: Từ chối key __proto__ và key chứa dấu chấm (prototype pollution)
+  test("[TC-CASL-09] Từ chối key __proto__ và key chứa dấu chấm (prototype pollution)", () => {
     const protoAttack = JSON.parse('{"__proto__":"x"}') as Record<
       string,
       unknown
@@ -239,7 +273,9 @@ describe("CASL ability (spec U01-U10)", () => {
     ).toThrow();
   });
 
-  test("U10 unknown action default deny", () => {
+  // [WORD-TC: TC-CASL-10]
+  // Chức năng: Action không xác định bị từ chối mặc định (default deny)
+  test("[TC-CASL-10] Action không xác định bị từ chối mặc định (default deny)", () => {
     const seller = factory.createForActor(principal({ id: SELLER_ID }));
     expect(
       seller.can(

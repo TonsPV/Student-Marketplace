@@ -1,3 +1,21 @@
+/**
+ * MODULE: POSTS (VÒNG ĐỜI TIN ĐĂNG)
+ *
+ * WORD TEST CASES:
+ * - TC-RNK-01: 0 review hoặc seller không có dòng reputation → UNRATED
+ * - TC-RNK-02: Số review nhỏ hơn minimumReviewCount → INSUFFICIENT_DATA
+ * - TC-RNK-03: Điểm trung bình NULL → UNRATED (không bao giờ EXCELLENT)
+ * - TC-RNK-04: Giữ nguyên ngưỡng đã thống nhất, không làm tròn hai lần
+ * - TC-RNK-05: Thứ tự ranking: EXCELLENT(6) > GOOD(5) > MEDIUM(4) > INSUFFICIENT_DATA(3) > UNRATED(2) > LOW(1)
+ * - TC-RNK-06: Thứ tự ranking dùng chung một nguồn CASE với phân loại reputation (single source)
+ * - TC-RNK-07: Dùng EXISTS cho từng tin để nhiều promotion không nhân bản bản ghi tin
+ * - TC-RNK-08: Chỉ boost khi promotion ACTIVE; SCHEDULED/EXPIRED/CANCELLED không boost
+ * - TC-RNK-09: Bảng promotions luôn được tham chiếu kèm schema (schema-qualified)
+ * - TC-RNK-10: Áp dụng: the shared eligibility policy with schema-qualified tables
+ * - TC-RNK-11: Từ chối: invalid schema identifiers
+ * - TC-RNK-12: Loại trừ promotion có thời hạn NULL hoặc đã hết hạn đúng tại thời điểm now
+ */
+
 import {
   activePromotionExpression,
   LISTING_EXPIRY_PREDICATE,
@@ -17,21 +35,27 @@ const config = {
 };
 
 describe("reputation CASE expression (unified ranking policy)", () => {
-  it("classifies 0 reviews and sellers without a reputation row as UNRATED", () => {
+  // [WORD-TC: TC-RNK-01]
+  // Chức năng: 0 review hoặc seller không có dòng reputation → UNRATED
+  it("[TC-RNK-01] 0 review hoặc seller không có dòng reputation → UNRATED", () => {
     const sql = reputationCaseExpression(config);
     expect(sql).toContain(
       `WHEN COALESCE(reputation.review_count, 0) = 0 THEN '${ReputationLevel.UNRATED}'`,
     );
   });
 
-  it("classifies fewer than minimumReviewCount reviews as INSUFFICIENT_DATA", () => {
+  // [WORD-TC: TC-RNK-02]
+  // Chức năng: Số review nhỏ hơn minimumReviewCount → INSUFFICIENT_DATA
+  it("[TC-RNK-02] Số review nhỏ hơn minimumReviewCount → INSUFFICIENT_DATA", () => {
     const sql = reputationCaseExpression(config);
     expect(sql).toContain(
       `WHEN reputation.review_count < ${config.minimumReviewCount} THEN '${ReputationLevel.INSUFFICIENT_DATA}'`,
     );
   });
 
-  it("defensively returns UNRATED (never EXCELLENT) for a NULL average", () => {
+  // [WORD-TC: TC-RNK-03]
+  // Chức năng: Điểm trung bình NULL → UNRATED (không bao giờ EXCELLENT)
+  it("[TC-RNK-03] Điểm trung bình NULL → UNRATED (không bao giờ EXCELLENT)", () => {
     const sql = reputationCaseExpression(config);
     const defensive = sql.indexOf("rating_average IS NULL");
     const low = sql.indexOf("THEN 'LOW'");
@@ -39,7 +63,9 @@ describe("reputation CASE expression (unified ranking policy)", () => {
     expect(defensive).toBeLessThan(low);
   });
 
-  it("keeps the agreed thresholds and does not double-round", () => {
+  // [WORD-TC: TC-RNK-04]
+  // Chức năng: Giữ nguyên ngưỡng đã thống nhất, không làm tròn hai lần
+  it("[TC-RNK-04] Giữ nguyên ngưỡng đã thống nhất, không làm tròn hai lần", () => {
     const sql = reputationCaseExpression(config);
     expect(sql).toContain("< 3 THEN 'LOW'");
     expect(sql).toContain("< 4 THEN 'MEDIUM'");
@@ -50,7 +76,9 @@ describe("reputation CASE expression (unified ranking policy)", () => {
 });
 
 describe("reputation priority expression", () => {
-  it("ranks EXCELLENT(6) > GOOD(5) > MEDIUM(4) > INSUFFICIENT_DATA(3) > UNRATED(2) > LOW(1)", () => {
+  // [WORD-TC: TC-RNK-05]
+  // Chức năng: Thứ tự ranking: EXCELLENT(6) > GOOD(5) > MEDIUM(4) > INSUFFICIENT_DATA(3) > UNRATED(2) > LOW(1)
+  it("[TC-RNK-05] Thứ tự ranking: EXCELLENT(6) > GOOD(5) > MEDIUM(4) > INSUFFICIENT_DATA(3) > UNRATED(2) > LOW(1)", () => {
     const sql = reputationPriorityExpression(config);
     expect(sql).toContain("WHEN 'EXCELLENT' THEN 6");
     expect(sql).toContain("WHEN 'GOOD' THEN 5");
@@ -67,21 +95,27 @@ describe("reputation priority expression", () => {
     ).toBe(true);
   });
 
-  it("is derived from the same CASE as the classification (single source)", () => {
+  // [WORD-TC: TC-RNK-06]
+  // Chức năng: Thứ tự ranking dùng chung một nguồn CASE với phân loại reputation (single source)
+  it("[TC-RNK-06] Thứ tự ranking dùng chung một nguồn CASE với phân loại reputation (single source)", () => {
     const sql = reputationPriorityExpression(config);
     expect(sql).toContain(reputationCaseExpression(config));
   });
 });
 
 describe("active promotion expression", () => {
-  it("uses EXISTS per post so multiple promotions never duplicate a post", () => {
+  // [WORD-TC: TC-RNK-07]
+  // Chức năng: Dùng EXISTS cho từng tin để nhiều promotion không nhân bản bản ghi tin
+  it("[TC-RNK-07] Dùng EXISTS cho từng tin để nhiều promotion không nhân bản bản ghi tin", () => {
     const sql = activePromotionExpression("public");
     expect(sql).toContain("EXISTS");
     expect(sql).not.toContain("JOIN");
     expect(sql).toContain('active_promotion."postId" = post.id');
   });
 
-  it("only boosts the ACTIVE window (not scheduled, expired or cancelled)", () => {
+  // [WORD-TC: TC-RNK-08]
+  // Chức năng: Chỉ boost khi promotion ACTIVE; SCHEDULED/EXPIRED/CANCELLED không boost
+  it("[TC-RNK-08] Chỉ boost khi promotion ACTIVE; SCHEDULED/EXPIRED/CANCELLED không boost", () => {
     const sql = activePromotionExpression("public");
     expect(sql).toContain("active_promotion.cancelled_at IS NULL");
     expect(sql).toContain(
@@ -90,7 +124,9 @@ describe("active promotion expression", () => {
     expect(sql).toContain('active_promotion."endsAt" > statement_timestamp()');
   });
 
-  it("schema-qualifies the promotions table", () => {
+  // [WORD-TC: TC-RNK-09]
+  // Chức năng: Bảng promotions luôn được tham chiếu kèm schema (schema-qualified)
+  it("[TC-RNK-09] Bảng promotions luôn được tham chiếu kèm schema (schema-qualified)", () => {
     expect(activePromotionExpression("app_schema")).toContain(
       '"app_schema"."post_promotions"',
     );
@@ -98,7 +134,9 @@ describe("active promotion expression", () => {
 });
 
 describe("reputation subquery", () => {
-  it("applies the shared eligibility policy with schema-qualified tables", () => {
+  // [WORD-TC: TC-RNK-10]
+  // Chức năng: Áp dụng: the shared eligibility policy with schema-qualified tables
+  it("[TC-RNK-10] Áp dụng: the shared eligibility policy with schema-qualified tables", () => {
     const sql = reputationSubquery("app_schema");
     expect(sql).toContain('"app_schema"."reviews"');
     expect(sql).toContain('"app_schema"."posts"');
@@ -109,7 +147,9 @@ describe("reputation subquery", () => {
     expect(sql).toContain("GROUP BY eligible_post.seller_id");
   });
 
-  it("rejects invalid schema identifiers", () => {
+  // [WORD-TC: TC-RNK-11]
+  // Chức năng: Từ chối: invalid schema identifiers
+  it("[TC-RNK-11] Từ chối: invalid schema identifiers", () => {
     expect(() => reputationSubquery('public"; DROP TABLE posts')).toThrow(
       "Invalid POSTGRES_SCHEMA",
     );
@@ -120,7 +160,9 @@ describe("reputation subquery", () => {
 });
 
 describe("listing expiry predicate", () => {
-  it("excludes NULL and expired-at-now lifetimes", () => {
+  // [WORD-TC: TC-RNK-12]
+  // Chức năng: Loại trừ promotion có thời hạn NULL hoặc đã hết hạn đúng tại thời điểm now
+  it("[TC-RNK-12] Loại trừ promotion có thời hạn NULL hoặc đã hết hạn đúng tại thời điểm now", () => {
     // Valid while expires_at > now; NULL (legacy rows, no backfill) is valid.
     expect(LISTING_EXPIRY_PREDICATE).toBe(
       "(post.expires_at > statement_timestamp())",

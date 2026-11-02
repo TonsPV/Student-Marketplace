@@ -1,3 +1,11 @@
+/**
+ * MODULE: PAYMENTS & PROMOTIONS
+ *
+ * WORD TEST CASES:
+ * - TC-QDR-01: Dùng đúng thứ tự pipe QueryDR theo tài liệu VNPay và múi giờ Việt Nam
+ * - TC-QDR-02: Bắt buộc chữ ký response khớp merchant, reference, type và command
+ */
+
 import { createHmac } from "node:crypto";
 import {
   queryRequest,
@@ -11,7 +19,9 @@ const order = {
     "https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_CreateDate=20261031200000",
   transactionNo: null,
 };
-it("uses documented querydr pipe order and Vietnam time", () => {
+// [WORD-TC: TC-QDR-01]
+// Chức năng: Dùng đúng thứ tự pipe QueryDR theo tài liệu VNPay và múi giờ Việt Nam
+it("[TC-QDR-01] Dùng đúng thứ tự pipe QueryDR theo tài liệu VNPay và múi giờ Việt Nam", () => {
   const p = queryRequest(
     order,
     "MERCHANT",
@@ -28,7 +38,9 @@ it("uses documented querydr pipe order and Vietnam time", () => {
       .digest("hex"),
   );
 });
-it("requires response signature and matching merchant, reference, type and command", () => {
+// [WORD-TC: TC-QDR-02]
+// Chức năng: Bắt buộc chữ ký response khớp merchant, reference, type và command
+it("[TC-QDR-02] Bắt buộc chữ ký response khớp merchant, reference, type và command", () => {
   const req = queryRequest(order, "MERCHANT", secret, "127.0.0.1");
   const p: Record<string, string> = {
     vnp_ResponseId: "id",

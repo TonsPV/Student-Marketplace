@@ -1,3 +1,38 @@
+/**
+ * MODULE: MODERATION & POSTING RESTRICTIONS
+ *
+ * WORD TEST CASES:
+ * - TC-MAA-01: Chấp nhận: exactly 1000 characters, including Vietnamese text
+ * - TC-MAA-02: Từ chối: 1001 characters
+ * - TC-MAA-03: Từ chối: blank reason ""
+ * - TC-MAA-04: Từ chối: blank reason " "
+ * - TC-MAA-05: Từ chối: blank reason "   \t\n "
+ * - TC-MAA-06: Áp dụng: the same rules to liftReason and restriction reason
+ * - TC-MAA-07: Chấp nhận: 2026-12-01T10:00:00Z
+ * - TC-MAA-08: Chấp nhận: 2026-12-01T10:00:00.123Z
+ * - TC-MAA-09: Chấp nhận: 2026-12-01T17:00:00+07:00
+ * - TC-MAA-10: Chấp nhận: 2026-12-01T05:00:00-05:00
+ * - TC-MAA-11: Từ chối: 2026-12-01
+ * - TC-MAA-12: Từ chối: 2026-12-01T10:00:00
+ * - TC-MAA-13: Từ chối: 2026-12-01T10:00:00+0700
+ * - TC-MAA-14: Từ chối: 2026-12-01 10:00:00Z
+ * - TC-MAA-15: Từ chối: not-a-date
+ * - TC-MAA-16: Sử dụng: >= for createdFrom and < for createdTo
+ * - TC-MAA-17: Từ chối: equal instants with 400 before querying
+ * - TC-MAA-18: Từ chối: equal across offsets with 400 before querying
+ * - TC-MAA-19: Từ chối: from after to with 400 before querying
+ * - TC-MAA-20: Response của warning không tiết lộ email hoặc password
+ * - TC-MAA-21: Response restriction tóm tắt target, người tạo và người gỡ
+ * - TC-MAA-22: Từ chối lift restriction EXPIRED với 400, không thay đổi history
+ * - TC-MAA-23: Từ chối lift restriction đã LIFTED với thông báo sẵn có
+ * - TC-MAA-24: Được gỡ (lift): ACTIVE
+ * - TC-MAA-25: Được gỡ (lift): SCHEDULED
+ * - TC-MAA-26: Được gỡ (lift): PERMANENT
+ * - TC-MAA-27: Admin không thể tự gỡ (lift) restriction của chính mình
+ * - TC-MAA-28: Admin đọc được bản ghi restriction của chính mình (D1)
+ * - TC-MAA-29: User thường không đọc được bản ghi moderation
+ */
+
 import "reflect-metadata";
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
@@ -118,22 +153,34 @@ describe("D3: reason / liftReason DTO validation", () => {
   const warning = (reason: unknown) =>
     errors(CreateWarningDto, { userId: USER, reason });
 
-  it("accepts exactly 1000 characters, including Vietnamese text", async () => {
+  // [WORD-TC: TC-MAA-01]
+  // Chức năng: Chấp nhận: exactly 1000 characters, including Vietnamese text
+  it("[TC-MAA-01] Chấp nhận: exactly 1000 characters, including Vietnamese text", async () => {
     expect(await warning("a".repeat(1000))).toEqual([]);
     expect(await warning("Đ".repeat(1000))).toEqual([]);
   });
 
-  it("rejects 1001 characters", async () => {
+  // [WORD-TC: TC-MAA-02]
+  // Chức năng: Từ chối: 1001 characters
+  it("[TC-MAA-02] Từ chối: 1001 characters", async () => {
     expect(await warning("a".repeat(1001))).toEqual([
       expect.stringContaining("shorter than or equal to 1000"),
     ]);
   });
 
-  it.each(["", " ", "   \t\n "])("rejects blank reason %j", async (reason) => {
+  // [WORD-TC: TC-MAA-03]
+  // Chức năng: Từ chối: blank reason ""
+  // [WORD-TC: TC-MAA-04]
+  // Chức năng: Từ chối: blank reason " "
+  // [WORD-TC: TC-MAA-05]
+  // Chức năng: Từ chối: blank reason "   \t\n "
+  it.each(["", " ", "   \t\n "])("[TC-MAA] Từ chối lý do cảnh báo để trống: %j", async (reason) => {
     expect(await warning(reason)).toContain("reason must not be blank");
   });
 
-  it("applies the same rules to liftReason and restriction reason", async () => {
+  // [WORD-TC: TC-MAA-06]
+  // Chức năng: Áp dụng: the same rules to liftReason and restriction reason
+  it("[TC-MAA-06] Áp dụng: the same rules to liftReason and restriction reason", async () => {
     expect(await errors(LiftRestrictionDto, { liftReason: "  " })).toContain(
       "liftReason must not be blank",
     );
@@ -159,25 +206,43 @@ describe("D4: instants must carry a timezone", () => {
       expiresAt,
     });
 
+  // [WORD-TC: TC-MAA-07]
+  // Chức năng: Chấp nhận: 2026-12-01T10:00:00Z
+  // [WORD-TC: TC-MAA-08]
+  // Chức năng: Chấp nhận: 2026-12-01T10:00:00.123Z
+  // [WORD-TC: TC-MAA-09]
+  // Chức năng: Chấp nhận: 2026-12-01T17:00:00+07:00
+  // [WORD-TC: TC-MAA-10]
+  // Chức năng: Chấp nhận: 2026-12-01T05:00:00-05:00
   it.each([
     "2026-12-01T10:00:00Z",
     "2026-12-01T10:00:00.123Z",
     "2026-12-01T17:00:00+07:00",
     "2026-12-01T05:00:00-05:00",
-  ])("accepts %s", async (value) => {
+  ])("[TC-MAA] Chấp nhận định dạng mốc thời gian hợp lệ: %s", async (value) => {
     expect(await restrictionDto(value)).toEqual([]);
     expect(await errors(WarningListQueryDto, { createdFrom: value })).toEqual(
       [],
     );
   });
 
+  // [WORD-TC: TC-MAA-11]
+  // Chức năng: Từ chối: 2026-12-01
+  // [WORD-TC: TC-MAA-12]
+  // Chức năng: Từ chối: 2026-12-01T10:00:00
+  // [WORD-TC: TC-MAA-13]
+  // Chức năng: Từ chối: 2026-12-01T10:00:00+0700
+  // [WORD-TC: TC-MAA-14]
+  // Chức năng: Từ chối: 2026-12-01 10:00:00Z
+  // [WORD-TC: TC-MAA-15]
+  // Chức năng: Từ chối: not-a-date
   it.each([
     "2026-12-01",
     "2026-12-01T10:00:00",
     "2026-12-01T10:00:00+0700",
     "2026-12-01 10:00:00Z",
     "not-a-date",
-  ])("rejects %s", async (value) => {
+  ])("[TC-MAA] Từ chối định dạng mốc thời gian không hợp lệ: %s", async (value) => {
     expect(await restrictionDto(value)).not.toEqual([]);
     expect(
       await errors(RestrictionListQueryDto, { createdTo: value }),
@@ -188,7 +253,9 @@ describe("D4: instants must carry a timezone", () => {
 describe("D4: [createdFrom, createdTo) date range in the service", () => {
   const base = { page: 1, limit: 20 } as WarningListQueryDto;
 
-  it("uses >= for createdFrom and < for createdTo", async () => {
+  // [WORD-TC: TC-MAA-16]
+  // Chức năng: Sử dụng: >= for createdFrom and < for createdTo
+  it("[TC-MAA-16] Sử dụng: >= for createdFrom and < for createdTo", async () => {
     const { qb, calls } = queryBuilder();
     const service = new ModerationService(readDataSource(qb), authorization);
     await service.listWarnings(ctx(ADMIN), {
@@ -209,6 +276,12 @@ describe("D4: [createdFrom, createdTo) date range in the service", () => {
     ]);
   });
 
+  // [WORD-TC: TC-MAA-17]
+  // Chức năng: Từ chối: equal instants with 400 before querying
+  // [WORD-TC: TC-MAA-18]
+  // Chức năng: Từ chối: equal across offsets with 400 before querying
+  // [WORD-TC: TC-MAA-19]
+  // Chức năng: Từ chối: from after to with 400 before querying
   it.each([
     ["equal instants", "2026-11-01T00:00:00Z", "2026-11-01T00:00:00Z"],
     [
@@ -217,7 +290,7 @@ describe("D4: [createdFrom, createdTo) date range in the service", () => {
       "2026-11-01T00:00:00Z",
     ],
     ["from after to", "2026-11-02T00:00:00Z", "2026-11-01T00:00:00Z"],
-  ])("rejects %s with 400 before querying", async (_label, from, to) => {
+  ])("[TC-MAA] Từ chối khoảng thời gian không hợp lệ (%s) với mã 400 trước khi query", async (_label, from, to) => {
     const { qb } = queryBuilder();
     const service = new ModerationService(readDataSource(qb), authorization);
     const range = { ...base, createdFrom: from, createdTo: to };
@@ -236,7 +309,9 @@ describe("D4: [createdFrom, createdTo) date range in the service", () => {
 describe("D5: user summaries expose only id and fullName", () => {
   const leaks = /email|password|example\.test/;
 
-  it("warning response never leaks email or password", () => {
+  // [WORD-TC: TC-MAA-20]
+  // Chức năng: Response của warning không tiết lộ email hoặc password
+  it("[TC-MAA-20] Response của warning không tiết lộ email hoặc password", () => {
     const row = Object.assign(new UserWarningEntity(), {
       id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
       userId: USER,
@@ -253,7 +328,9 @@ describe("D5: user summaries expose only id and fullName", () => {
     expect(JSON.stringify(response)).not.toMatch(leaks);
   });
 
-  it("restriction response summarizes target, issuer and lifter", () => {
+  // [WORD-TC: TC-MAA-21]
+  // Chức năng: Response restriction tóm tắt target, người tạo và người gỡ
+  it("[TC-MAA-21] Response restriction tóm tắt target, người tạo và người gỡ", () => {
     const now = new Date();
     const lifted = toRestrictionResponse(
       restriction({
@@ -296,7 +373,9 @@ describe("D1 + D2: lift and read rules in the service", () => {
     return { service, update };
   }
 
-  it("rejects EXPIRED with 400 and leaves history untouched", async () => {
+  // [WORD-TC: TC-MAA-22]
+  // Chức năng: Từ chối lift restriction EXPIRED với 400, không thay đổi history
+  it("[TC-MAA-22] Từ chối lift restriction EXPIRED với 400, không thay đổi history", async () => {
     const { service, update } = liftHarness(
       restriction({
         startsAt: new Date(Date.now() - 3 * HOUR),
@@ -311,7 +390,9 @@ describe("D1 + D2: lift and read rules in the service", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("rejects LIFTED with the existing message", async () => {
+  // [WORD-TC: TC-MAA-23]
+  // Chức năng: Từ chối lift restriction đã LIFTED với thông báo sẵn có
+  it("[TC-MAA-23] Từ chối lift restriction đã LIFTED với thông báo sẵn có", async () => {
     const { service, update } = liftHarness(
       restriction({ liftedAt: new Date(), liftedById: OTHER_ADMIN }),
     );
@@ -321,6 +402,12 @@ describe("D1 + D2: lift and read rules in the service", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
+  // [WORD-TC: TC-MAA-24]
+  // Chức năng: Được gỡ (lift): ACTIVE
+  // [WORD-TC: TC-MAA-25]
+  // Chức năng: Được gỡ (lift): SCHEDULED
+  // [WORD-TC: TC-MAA-26]
+  // Chức năng: Được gỡ (lift): PERMANENT
   it.each([
     ["ACTIVE", () => restriction()],
     [
@@ -339,7 +426,7 @@ describe("D1 + D2: lift and read rules in the service", () => {
           expiresAt: null,
         }),
     ],
-  ])("lifts %s", async (_label, row) => {
+  ])("[TC-MAA] Gỡ bỏ thành công hạn chế đăng tin trạng thái %s", async (_label, row) => {
     const { service, update } = liftHarness(row());
     await service.liftPostingRestriction(ctx(ADMIN), RESTRICTION, "  ok  ");
     expect(update).toHaveBeenCalledWith(
@@ -348,7 +435,9 @@ describe("D1 + D2: lift and read rules in the service", () => {
     );
   });
 
-  it("an admin cannot lift their own restriction", async () => {
+  // [WORD-TC: TC-MAA-27]
+  // Chức năng: Admin không thể tự gỡ (lift) restriction của chính mình
+  it("[TC-MAA-27] Admin không thể tự gỡ (lift) restriction của chính mình", async () => {
     const { service, update } = liftHarness(restriction({ userId: ADMIN }));
     await expect(
       service.liftPostingRestriction(ctx(ADMIN), RESTRICTION, "ok"),
@@ -356,7 +445,9 @@ describe("D1 + D2: lift and read rules in the service", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("an admin can read their own restriction (D1)", async () => {
+  // [WORD-TC: TC-MAA-28]
+  // Chức năng: Admin đọc được bản ghi restriction của chính mình (D1)
+  it("[TC-MAA-28] Admin đọc được bản ghi restriction của chính mình (D1)", async () => {
     const { qb } = queryBuilder({
       getOne: restriction({
         userId: ADMIN,
@@ -370,7 +461,9 @@ describe("D1 + D2: lift and read rules in the service", () => {
     expect(view.status).toBe(RestrictionStatus.ACTIVE);
   });
 
-  it("regular users cannot read moderation records", async () => {
+  // [WORD-TC: TC-MAA-29]
+  // Chức năng: User thường không đọc được bản ghi moderation
+  it("[TC-MAA-29] User thường không đọc được bản ghi moderation", async () => {
     const service = new ModerationService({} as DataSource, authorization);
     await expect(
       service.getRestriction(ctx(USER, false), RESTRICTION),

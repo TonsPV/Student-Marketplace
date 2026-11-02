@@ -1,4 +1,13 @@
 /**
+ * MODULE: POSTS (VÒNG ĐỜI TIN ĐĂNG)
+ *
+ * WORD TEST CASES:
+ * - TC-PSR-01: Realtime emit lỗi không được làm fail giao dịch bán đã commit
+ * - TC-PSR-02: Emit hoạt động bình thường → sự kiện review-request phát đúng một lần
+ * - TC-PSR-03: Lỗi nghiệp vụ trong transaction không bị che giấu và emit bị bỏ qua
+ */
+
+/**
  * F2-09 regression — Realtime emit failure after the sale transaction.
  *
  * Root cause (audit): markAsSold() emits WS_EVENTS.NOTIFICATION_NEW after the
@@ -117,7 +126,9 @@ describe("PostsService.markAsSold — realtime failure after commit (F2-09)", ()
     principal: { id: SELLER },
   } as unknown as MarkAsSoldContext;
 
-  it("R1 detector: realtime emit failure must not fail the committed sale", async () => {
+  // [WORD-TC: TC-PSR-01]
+  // Chức năng: Realtime emit lỗi không được làm fail giao dịch bán đã commit
+  it("[TC-PSR-01] Realtime emit lỗi không được làm fail giao dịch bán đã commit", async () => {
     const harness = createHarness({
       emitImpl: () => {
         throw new Error("websocket gateway unavailable");
@@ -139,7 +150,9 @@ describe("PostsService.markAsSold — realtime failure after commit (F2-09)", ()
     expect(harness.emitToUser).toHaveBeenCalledTimes(1);
   });
 
-  it("R2: a healthy emit publishes the review-request event exactly once", async () => {
+  // [WORD-TC: TC-PSR-02]
+  // Chức năng: Emit hoạt động bình thường → sự kiện review-request phát đúng một lần
+  it("[TC-PSR-02] Emit hoạt động bình thường → sự kiện review-request phát đúng một lần", async () => {
     const harness = createHarness({
       emitImpl: () => undefined,
       conversation: { id: "conversation-1" },
@@ -158,7 +171,9 @@ describe("PostsService.markAsSold — realtime failure after commit (F2-09)", ()
     );
   });
 
-  it("R3: business failure inside the transaction is not masked and emit is skipped", async () => {
+  // [WORD-TC: TC-PSR-03]
+  // Chức năng: Lỗi nghiệp vụ trong transaction không bị che giấu và emit bị bỏ qua
+  it("[TC-PSR-03] Lỗi nghiệp vụ trong transaction không bị che giấu và emit bị bỏ qua", async () => {
     const harness = createHarness({
       emitImpl: () => undefined,
       conversation: null,

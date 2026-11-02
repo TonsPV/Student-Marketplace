@@ -1,3 +1,14 @@
+/**
+ * MODULE: REALTIME (WEBSOCKET)
+ *
+ * WORD TEST CASES:
+ * - TC-RT-01: Timeout chốt kết quả đúng một lần; kết quả DB trả về muộn không hồi sinh session
+ * - TC-RT-02: Abort chốt kết quả đúng một lần; kết quả DB trả về muộn không hồi sinh session
+ * - TC-RT-03: JWT lỗi → không đăng ký pending state, không truy vấn DB
+ * - TC-RT-04: DB lỗi → dọn pending state và trả INTERNAL_ERROR
+ * - TC-RT-05: Tài khoản chưa hoàn tất không qua được onboarding bằng handshake access-JWT
+ */
+
 import "reflect-metadata";
 import { EventEmitter } from "events";
 import type { SocketTicketService } from "../../src/modules/realtime/socket-ticket.service";
@@ -76,8 +87,12 @@ describe("handshake settlement and cleanup", () => {
       jwt,
     };
   }
+  // [WORD-TC: TC-RT-01]
+  // Chức năng: Timeout chốt kết quả đúng một lần; kết quả DB trả về muộn không hồi sinh session
+  // [WORD-TC: TC-RT-02]
+  // Chức năng: Abort chốt kết quả đúng một lần; kết quả DB trả về muộn không hồi sinh session
   it.each(["timeout", "abort"])(
-    "%s settles next once and a late DB result cannot resurrect the session",
+    "[TC-RT] Cơ chế %s hoàn tất kết quả đúng 1 lần, kết quả DB về muộn không hồi sinh session",
     async (reason) => {
       let release!: (value: typeof principal) => void, entered!: () => void;
       const result = new Promise<typeof principal>(
@@ -107,7 +122,9 @@ describe("handshake settlement and cleanup", () => {
       expect(registry.activate(h.socket.id)).toBeNull();
     },
   );
-  it("JWT failure does not register pending state or query DB", async () => {
+  // [WORD-TC: TC-RT-03]
+  // Chức năng: JWT lỗi → không đăng ký pending state, không truy vấn DB
+  it("[TC-RT-03] JWT lỗi → không đăng ký pending state, không truy vấn DB", async () => {
     const resolve = jest.fn().mockResolvedValue(principal),
       h = harness(resolve);
     h.jwt.verify.mockRejectedValue(Error("bad JWT"));
@@ -117,14 +134,18 @@ describe("handshake settlement and cleanup", () => {
     expect(registry.get(h.socket.id)).toBeUndefined();
     expect(jest.getTimerCount()).toBe(0);
   });
-  it("DB failure cleans pending state and surfaces INTERNAL_ERROR", async () => {
+  // [WORD-TC: TC-RT-04]
+  // Chức năng: DB lỗi → dọn pending state và trả INTERNAL_ERROR
+  it("[TC-RT-04] DB lỗi → dọn pending state và trả INTERNAL_ERROR", async () => {
     const h = harness(() => Promise.reject(Error("DB unavailable")));
     await h.middleware(h.socket, h.next);
     expect(h.next.mock.calls[0][0].message).toBe("INTERNAL_ERROR");
     expect(registry.get(h.socket.id)).toBeUndefined();
     expect(jest.getTimerCount()).toBe(0);
   });
-  it("incomplete accounts cannot bypass onboarding using an access-JWT handshake", async () => {
+  // [WORD-TC: TC-RT-05]
+  // Chức năng: Tài khoản chưa hoàn tất không qua được onboarding bằng handshake access-JWT
+  it("[TC-RT-05] Tài khoản chưa hoàn tất không qua được onboarding bằng handshake access-JWT", async () => {
     const h = harness(async () => ({ ...principal, hasLocation: false }));
     await h.middleware(h.socket, h.next);
     expect(h.next.mock.calls[0][0].message).toBe("LOCATION_REQUIRED");

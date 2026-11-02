@@ -1,3 +1,14 @@
+/**
+ * MODULE: AUTHENTICATION & PHIÊN ĐĂNG NHẬP
+ *
+ * WORD TEST CASES:
+ * - TC-PRM-01: Render email HTML+text đầy đủ qua @nestjs-modules/mailer và Nodemailer, không cần mạng
+ * - TC-PRM-02: Validate cấu hình mail và luôn bật TLS trên cổng 465/587
+ * - TC-PRM-03: HTML render nghiêm ngặt, escape tên người dùng, giữ số 0 đầu của OTP
+ * - TC-PRM-04: Gửi cả HTML lẫn text; từ chối khi người nhận không chấp nhận mail
+ * - TC-PRM-05: Gửi email thông báo đổi mật khẩu không kèm thông tin đăng nhập
+ */
+
 import { ConfigService } from "@nestjs/config";
 import { MailerModule, MailerService } from "@nestjs-modules/mailer";
 import { Module } from "@nestjs/common";
@@ -16,7 +27,9 @@ const configuration = {
 };
 
 describe("password reset SMTP and templates", () => {
-  it("renders a complete multipart email through Nest mailer and Nodemailer without network access", async () => {
+  // [WORD-TC: TC-PRM-01]
+  // Chức năng: Render email HTML+text đầy đủ qua @nestjs-modules/mailer và Nodemailer, không cần mạng
+  it("[TC-PRM-01] Render email HTML+text đầy đủ qua @nestjs-modules/mailer và Nodemailer, không cần mạng", async () => {
     @Module({
       imports: [
         MailerModule.forRoot({
@@ -53,7 +66,9 @@ describe("password reset SMTP and templates", () => {
       await app.close();
     }
   });
-  it("validates configuration and keeps TLS enabled on 465 and 587", () => {
+  // [WORD-TC: TC-PRM-02]
+  // Chức năng: Validate cấu hình mail và luôn bật TLS trên cổng 465/587
+  it("[TC-PRM-02] Validate cấu hình mail và luôn bật TLS trên cổng 465/587", () => {
     expect(
       mailOptions(new ConfigService(configuration)).transport,
     ).toMatchObject({
@@ -83,7 +98,9 @@ describe("password reset SMTP and templates", () => {
         mailOptions(new ConfigService({ ...configuration, ...options })),
       ).toThrow();
   });
-  it("renders strict HTML, escapes names and preserves leading zeroes", () => {
+  // [WORD-TC: TC-PRM-03]
+  // Chức năng: HTML render nghiêm ngặt, escape tên người dùng, giữ số 0 đầu của OTP
+  it("[TC-PRM-03] HTML render nghiêm ngặt, escape tên người dùng, giữ số 0 đầu của OTP", () => {
     const template = readFileSync(
       join(__dirname, "../../src/modules/mailer/templates/reset-password.hbs"),
       "utf8",
@@ -99,7 +116,9 @@ describe("password reset SMTP and templates", () => {
     expect(html).not.toContain("<script>");
     expect(() => render({ fullName: "Student", otp: "012345" })).toThrow();
   });
-  it("sends HTML plus text and rejects unaccepted recipients", async () => {
+  // [WORD-TC: TC-PRM-04]
+  // Chức năng: Gửi cả HTML lẫn text; từ chối khi người nhận không chấp nhận mail
+  it("[TC-PRM-04] Gửi cả HTML lẫn text; từ chối khi người nhận không chấp nhận mail", async () => {
     const sendMail = jest
       .fn()
       .mockResolvedValue({ accepted: ["student@example.com"] });
@@ -127,7 +146,9 @@ describe("password reset SMTP and templates", () => {
       "SMTP failed",
     );
   });
-  it("sends a password-change notice without credentials", async () => {
+  // [WORD-TC: TC-PRM-05]
+  // Chức năng: Gửi email thông báo đổi mật khẩu không kèm thông tin đăng nhập
+  it("[TC-PRM-05] Gửi email thông báo đổi mật khẩu không kèm thông tin đăng nhập", async () => {
     const sendMail = jest
       .fn()
       .mockResolvedValue({ accepted: ["student@example.com"] });

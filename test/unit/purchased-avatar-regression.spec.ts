@@ -1,3 +1,14 @@
+/**
+ * MODULE: POSTS (VÒNG ĐỜI TIN ĐĂNG)
+ *
+ * WORD TEST CASES:
+ * - TC-PAV-01: SELECT của findPurchased phải chứa seller.avatarStorageKey
+ * - TC-PAV-02: Seller thiếu storage key và URL → không ký presigned avatar (không lỗi)
+ * - TC-PAV-03: Khi storage key tới mapper, trả về URL avatar đã ký
+ * - TC-PAV-04: Seller dùng avatarUrl thường giữ nguyên URL, không ký lại
+ * - TC-PAV-05: Seller không có dữ liệu avatar → avatarUrl = null
+ */
+
 import "reflect-metadata";
 import { DataSource, Repository } from "typeorm";
 import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
@@ -89,7 +100,9 @@ describe("purchased posts seller avatar (F2-01 regression)", () => {
     return { service, postsRepository, storage };
   }
 
-  it("R1 detector: findPurchased select must include seller.avatarStorageKey", async () => {
+  // [WORD-TC: TC-PAV-01]
+  // Chức năng: SELECT của findPurchased phải chứa seller.avatarStorageKey
+  it("[TC-PAV-01] SELECT của findPurchased phải chứa seller.avatarStorageKey", async () => {
     const post = soldPost({
       id: SELLER,
       fullName: "Seller",
@@ -107,7 +120,9 @@ describe("purchased posts seller avatar (F2-01 regression)", () => {
     expect(options.select.seller).toHaveProperty("avatarStorageKey", true);
   });
 
-  it("R1 impact: seller row shaped by the current select (no storage key, null url) yields no presigned avatar", async () => {
+  // [WORD-TC: TC-PAV-02]
+  // Chức năng: Seller thiếu storage key và URL → không ký presigned avatar (không lỗi)
+  it("[TC-PAV-02] Seller thiếu storage key và URL → không ký presigned avatar (không lỗi)", async () => {
     // This shape is what TypeORM returns under the current select:
     // id/fullName/avatarUrl only — see merge diff 19a695c (F2-01).
     const post = soldPost({
@@ -126,7 +141,9 @@ describe("purchased posts seller avatar (F2-01 regression)", () => {
     expect(result.items[0].seller).toMatchObject({ avatarUrl: null });
   });
 
-  it("R1 mapper sanity: when the storage key reaches the mapper, a signed avatar is returned", async () => {
+  // [WORD-TC: TC-PAV-03]
+  // Chức năng: Khi storage key tới mapper, trả về URL avatar đã ký
+  it("[TC-PAV-03] Khi storage key tới mapper, trả về URL avatar đã ký", async () => {
     const post = soldPost({
       id: SELLER,
       fullName: "Seller",
@@ -148,7 +165,9 @@ describe("purchased posts seller avatar (F2-01 regression)", () => {
     });
   });
 
-  it("R2: seller with a plain avatarUrl keeps it without presigning", async () => {
+  // [WORD-TC: TC-PAV-04]
+  // Chức năng: Seller dùng avatarUrl thường giữ nguyên URL, không ký lại
+  it("[TC-PAV-04] Seller dùng avatarUrl thường giữ nguyên URL, không ký lại", async () => {
     const post = soldPost({
       id: SELLER,
       fullName: "Seller",
@@ -165,7 +184,9 @@ describe("purchased posts seller avatar (F2-01 regression)", () => {
     expect(result.items[0].seller).toMatchObject({ avatarUrl: PLAIN_URL });
   });
 
-  it("R3: seller without any avatar data resolves to null avatarUrl", async () => {
+  // [WORD-TC: TC-PAV-05]
+  // Chức năng: Seller không có dữ liệu avatar → avatarUrl = null
+  it("[TC-PAV-05] Seller không có dữ liệu avatar → avatarUrl = null", async () => {
     const post = soldPost({ id: SELLER, fullName: "Seller" });
     const { service, storage } = setup(post);
 

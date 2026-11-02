@@ -1,3 +1,18 @@
+/**
+ * MODULE: CONVERSATIONS & MESSAGES
+ *
+ * WORD TEST CASES:
+ * - TC-MHIS-01: Sử dụng: bigint bounds and limit+1, with authorization before querying
+ * - TC-MHIS-02: Trả về: an empty delta without loading or signing any older message
+ * - TC-MHIS-03: Từ chối: invalid bounds before SQL: -1
+ * - TC-MHIS-04: Từ chối: invalid bounds before SQL:
+ * - TC-MHIS-05: Từ chối: invalid bounds before SQL: 01
+ * - TC-MHIS-06: Từ chối: invalid bounds before SQL: 1e3
+ * - TC-MHIS-07: Từ chối: invalid bounds before SQL: 1.2
+ * - TC-MHIS-08: Từ chối: invalid bounds before SQL: 9223372036854775808
+ * - TC-MHIS-09: Không query history for a nonparticipant
+ */
+
 import "reflect-metadata";
 import { ForbiddenException } from "@nestjs/common";
 import { DataSource } from "typeorm";
@@ -75,7 +90,9 @@ describe("message history deltas", () => {
     );
   });
 
-  it("uses bigint bounds and limit+1, with authorization before querying", async () => {
+  // [WORD-TC: TC-MHIS-01]
+  // Chức năng: Sử dụng: bigint bounds and limit+1, with authorization before querying
+  it("[TC-MHIS-01] Sử dụng: bigint bounds and limit+1, with authorization before querying", async () => {
     find.mockResolvedValue([messages[2]]);
     const page = await service.findMessages(id, context, {
       limit: 1,
@@ -106,7 +123,9 @@ describe("message history deltas", () => {
     ]);
   });
 
-  it("returns an empty delta without loading or signing any older message", async () => {
+  // [WORD-TC: TC-MHIS-02]
+  // Chức năng: Trả về: an empty delta without loading or signing any older message
+  it("[TC-MHIS-02] Trả về: an empty delta without loading or signing any older message", async () => {
     expect(
       await service.findMessages(id, context, {
         limit: 30,
@@ -116,8 +135,20 @@ describe("message history deltas", () => {
     expect(find).not.toHaveBeenCalled();
   });
 
+  // [WORD-TC: TC-MHIS-03]
+  // Chức năng: Từ chối: invalid bounds before SQL: -1
+  // [WORD-TC: TC-MHIS-04]
+  // Chức năng: Từ chối: invalid bounds before SQL:
+  // [WORD-TC: TC-MHIS-05]
+  // Chức năng: Từ chối: invalid bounds before SQL: 01
+  // [WORD-TC: TC-MHIS-06]
+  // Chức năng: Từ chối: invalid bounds before SQL: 1e3
+  // [WORD-TC: TC-MHIS-07]
+  // Chức năng: Từ chối: invalid bounds before SQL: 1.2
+  // [WORD-TC: TC-MHIS-08]
+  // Chức năng: Từ chối: invalid bounds before SQL: 9223372036854775808
   it.each(["-1", "", "01", "1e3", "1.2", "9223372036854775808"])(
-    "rejects invalid bounds before SQL: %s",
+    "[TC-MHIS] Từ chối afterSequence không hợp lệ trước khi truy vấn SQL: %s",
     async (afterSequence) => {
       await expect(
         service.findMessages(id, context, { limit: 30, afterSequence }),
@@ -126,7 +157,9 @@ describe("message history deltas", () => {
     },
   );
 
-  it("does not query history for a nonparticipant", async () => {
+  // [WORD-TC: TC-MHIS-09]
+  // Chức năng: Không query history for a nonparticipant
+  it("[TC-MHIS-09] Không query history for a nonparticipant", async () => {
     getForAction.mockRejectedValue(new ForbiddenException());
     await expect(
       service.findMessages(id, context, { limit: 30, afterSequence: "0" }),

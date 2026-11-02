@@ -1,3 +1,12 @@
+/**
+ * MODULE: USERS & HỒ SƠ CÁ NHÂN
+ *
+ * WORD TEST CASES:
+ * - TC-LOC-01: Chặn các nghiệp vụ khi chưa có location nhưng vẫn cho phép truy cập profile/location
+ * - TC-LOC-02: Kiểm tra lại trạng thái DB với cùng claims sau khi lưu, gồm cả tọa độ 0
+ * - TC-LOC-03: Trạng thái sẵn sàng location từ DB được giữ nguyên khi đi qua HTTP policy guard
+ */
+
 import "reflect-metadata";
 import { ForbiddenException } from "@nestjs/common";
 import { Repository } from "typeorm";
@@ -18,7 +27,9 @@ describe("mandatory default location", () => {
     isAdmin: false,
     hasLocation: false,
   };
-  it("blocks business capabilities while allowing profile/location access", () => {
+  // [WORD-TC: TC-LOC-01]
+  // Chức năng: Chặn các nghiệp vụ khi chưa có location nhưng vẫn cho phép truy cập profile/location
+  it("[TC-LOC-01] Chặn các nghiệp vụ khi chưa có location nhưng vẫn cho phép truy cập profile/location", () => {
     const context = authorization.createAuthenticatedContext(actor);
     expect(() => authorization.assertRoute(context, "create", "Post")).toThrow(
       ForbiddenException,
@@ -57,7 +68,9 @@ describe("mandatory default location", () => {
       ),
     ).not.toThrow();
   });
-  it("rechecks DB state with the same claims after saving, including 0 coordinates", async () => {
+  // [WORD-TC: TC-LOC-02]
+  // Chức năng: Kiểm tra lại trạng thái DB với cùng claims sau khi lưu, gồm cả tọa độ 0
+  it("[TC-LOC-02] Kiểm tra lại trạng thái DB với cùng claims sau khi lưu, gồm cả tọa độ 0", async () => {
     const findOne = jest
       .fn()
       .mockResolvedValue({ ...actor, isLocked: false, location: null });
@@ -86,7 +99,9 @@ describe("mandatory default location", () => {
       ),
     ).not.toThrow();
   });
-  it("retains DB location readiness through the HTTP policy guard", async () => {
+  // [WORD-TC: TC-LOC-03]
+  // Chức năng: Trạng thái sẵn sàng location từ DB được giữ nguyên khi đi qua HTTP policy guard
+  it("[TC-LOC-03] Trạng thái sẵn sàng location từ DB được giữ nguyên khi đi qua HTTP policy guard", async () => {
     class Controller {
       @CheckPolicies({ action: "create", subject: "Post" }) create() {}
     }

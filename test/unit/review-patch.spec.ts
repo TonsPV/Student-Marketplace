@@ -1,3 +1,15 @@
+/**
+ * MODULE: REVIEWS (ĐÁNH GIÁ NGƯỜI BÁN)
+ *
+ * WORD TEST CASES:
+ * - TC-RPATCH-01: Patch rỗng/undefined bị từ chối sau phân quyền instance, trước khi lưu
+ * - TC-RPATCH-02: ID của principal và của instance được chuẩn hóa nhất quán khi kiểm tra field
+ * - TC-RPATCH-03: Từ chối: updates and deletes for soft-deleted reviews
+ * - TC-RPATCH-04: Cập nhật review và ghi revision history trong cùng một transaction
+ * - TC-RPATCH-05: Patch không thay đổi gì → không lưu, không tạo history
+ * - TC-RPATCH-06: Cập nhật đồng thời được tuần tự hóa, revision tăng dần không trùng
+ */
+
 import { ReviewsService } from "../../src/modules/reviews/reviews.service";
 import { ReviewEntity } from "../../src/modules/reviews/review.entity";
 import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
@@ -6,7 +18,9 @@ const REVIEW = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   OWNER = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
   POST = "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
   OTHER = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-it("empty/undefined review patches are rejected after instance authorization, before save", async () => {
+// [WORD-TC: TC-RPATCH-01]
+// Chức năng: Patch rỗng/undefined bị từ chối sau phân quyền instance, trước khi lưu
+it("[TC-RPATCH-01] Patch rỗng/undefined bị từ chối sau phân quyền instance, trước khi lưu", async () => {
   const authorization = new AuthorizationService(new CaslAbilityFactory()),
     save = jest.fn(),
     queryBuilder = {
@@ -55,7 +69,9 @@ it("empty/undefined review patches are rejected after instance authorization, be
   ).rejects.toMatchObject({ status: 403 });
   expect(save).not.toHaveBeenCalled();
 });
-it("uppercase server principal and raw instance IDs normalize consistently for fields", () => {
+// [WORD-TC: TC-RPATCH-02]
+// Chức năng: ID của principal và của instance được chuẩn hóa nhất quán khi kiểm tra field
+it("[TC-RPATCH-02] ID của principal và của instance được chuẩn hóa nhất quán khi kiểm tra field", () => {
   const authorization = new AuthorizationService(new CaslAbilityFactory()),
     context = authorization.createAuthenticatedContext({
       id: OWNER.toUpperCase(),
@@ -75,7 +91,9 @@ it("uppercase server principal and raw instance IDs normalize consistently for f
   ).not.toThrow();
 });
 
-it("rejects updates and deletes for soft-deleted reviews", async () => {
+// [WORD-TC: TC-RPATCH-03]
+// Chức năng: Từ chối: updates and deletes for soft-deleted reviews
+it("[TC-RPATCH-03] Từ chối: updates and deletes for soft-deleted reviews", async () => {
   const authorization = new AuthorizationService(new CaslAbilityFactory()),
     queryBuilder = {
       where: jest.fn().mockReturnThis(),
@@ -122,7 +140,9 @@ it("rejects updates and deletes for soft-deleted reviews", async () => {
   expect(softRemove).not.toHaveBeenCalled();
 });
 
-it("updates and records a revision in one transaction", async () => {
+// [WORD-TC: TC-RPATCH-04]
+// Chức năng: Cập nhật review và ghi revision history trong cùng một transaction
+it("[TC-RPATCH-04] Cập nhật review và ghi revision history trong cùng một transaction", async () => {
   const authorization = new AuthorizationService(new CaslAbilityFactory()),
     review = {
       id: REVIEW,
@@ -201,7 +221,9 @@ it("updates and records a revision in one transaction", async () => {
   ]);
 });
 
-it("does not save or create history for a no-op patch", async () => {
+// [WORD-TC: TC-RPATCH-05]
+// Chức năng: Patch không thay đổi gì → không lưu, không tạo history
+it("[TC-RPATCH-05] Patch không thay đổi gì → không lưu, không tạo history", async () => {
   const authorization = new AuthorizationService(new CaslAbilityFactory()),
     review = {
       id: REVIEW,
@@ -268,7 +290,9 @@ it("does not save or create history for a no-op patch", async () => {
   expect(historyRepository.save).not.toHaveBeenCalled();
 });
 
-it("serializes concurrent updates and assigns distinct sequential revisions", async () => {
+// [WORD-TC: TC-RPATCH-06]
+// Chức năng: Cập nhật đồng thời được tuần tự hóa, revision tăng dần không trùng
+it("[TC-RPATCH-06] Cập nhật đồng thời được tuần tự hóa, revision tăng dần không trùng", async () => {
   const authorization = new AuthorizationService(new CaslAbilityFactory());
   const state = {
     rating: 3,
