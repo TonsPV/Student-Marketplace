@@ -1,12 +1,23 @@
 import { Injectable } from "@nestjs/common";
-import { EntityManager, MoreThan, LessThanOrEqual, IsNull } from "typeorm";
+import {
+  EntityManager,
+  MoreThan,
+  LessThan,
+  LessThanOrEqual,
+  IsNull,
+} from "typeorm";
 import { PostEntity, PostStatus } from "../posts/post.entity";
 import { UserEntity } from "../user/user.entity";
 import { Promotion } from "../promotions/promotion.entity";
 
 @Injectable()
 export class PromotionEligibilityService {
-  async check(m: EntityManager, post: PostEntity | null, owner: string) {
+  async check(
+    m: EntityManager,
+    post: PostEntity | null,
+    owner: string,
+    hours = 0,
+  ) {
     if (!post || post.sellerId !== owner || post.deletedAt)
       return {
         eligible: false,
@@ -44,15 +55,24 @@ export class PromotionEligibilityService {
       where: {
         postId: post.id,
         cancelledAt: IsNull(),
-        startsAt: LessThanOrEqual(now),
+        startsAt:
+          hours > 0
+            ? LessThan(new Date(now.getTime() + hours * 3600000))
+            : LessThanOrEqual(now),
         endsAt: MoreThan(now),
       },
       order: { endsAt: "DESC" },
     });
     return {
+      checkedAt: now,
       eligible: !promotion,
-      reason: promotion ? "already_promoted" : null,
-      promotedUntil: promotion?.endsAt ?? null,
+      reason: promotion
+        ? promotion.startsAt > now
+          ? "scheduled_promotion_overlap"
+          : "already_promoted"
+        : null,
+      promotedUntil:
+        promotion && promotion.startsAt <= now ? promotion.endsAt : null,
     };
   }
 }

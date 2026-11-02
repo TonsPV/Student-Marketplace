@@ -3,7 +3,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
+import {
+  NotificationEntity,
+  NotificationType,
+} from "../notifications/notification.entity";
+import { NotificationsService } from "../notifications/notifications.service";
 import {
   DataSource,
   EntityManager,
@@ -50,6 +56,7 @@ import type {
   UserRestrictionResponse,
 } from "./dto/user-moderation-response.dto";
 import { toRestrictionResponse, toWarningResponse } from "./moderation.mapper";
+import { sellerPostingReputation } from "./reputation-posting-policy";
 
 export interface IssueWarningInput {
   userId: string;
@@ -102,6 +109,7 @@ export class ModerationService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly authorization: AuthorizationService,
+    @Optional() private readonly notifications?: NotificationsService,
   ) {}
 
   async issueWarning(
@@ -119,13 +127,13 @@ export class ModerationService {
     this.assertNotSelf(context, userId);
     this.authorization.assertCreate(context, "UserWarning", { userId });
 
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       await this.ensureTargetUser(manager, userId);
       if (sourceReportId) {
         await this.ensureReportConcernsUser(manager, sourceReportId, userId);
       }
       const repo = manager.getRepository(UserWarningEntity);
-      return repo.save(
+      const warning = await repo.save(
         repo.create({
           userId,
           reason,
@@ -133,7 +141,23 @@ export class ModerationService {
           sourceReportId,
         }),
       );
+      const notification = await manager.save(
+        NotificationEntity,
+        manager.create(NotificationEntity, {
+          userId,
+          type: NotificationType.MODERATION_WARNING,
+          refId: userId,
+          targetType: "posting_status",
+          dedupKey: `moderation-warning:${warning.id}`,
+          title: "Cảnh báo từ quản trị viên",
+          body: reason,
+          isRead: false,
+        }),
+      );
+      return { warning, notification };
     });
+    this.notifications?.emitCreated(result.notification);
+    return result.warning;
   }
 
   async createPostingRestriction(
@@ -523,11 +547,16 @@ export class ModerationService {
         (row) => restrictionStatus(row, now) === RestrictionStatus.SCHEDULED,
       )
       .map((row) => this.toUserRestrictionResponse(row, now));
+    const reputation = await sellerPostingReputation(
+      this.dataSource.manager,
+      context.principal.id,
+    );
     return {
-      isRestricted: activeRestrictions.length > 0,
+      isRestricted: activeRestrictions.length > 0 || reputation.blocked,
       activeRestrictions,
       scheduledRestrictions,
-      canCreatePost: activeRestrictions.length === 0,
+      canCreatePost: activeRestrictions.length === 0 && !reputation.blocked,
+      reputation,
     };
   }
 
@@ -553,6 +582,29 @@ export class ModerationService {
     };
   }
 
+  async listMyWarnings(
+    context: AuthenticatedContext,
+    query: { page: number; limit: number },
+  ) {
+    const [rows, total] = await this.dataSource
+      .getRepository(UserWarningEntity)
+      .findAndCount({
+        where: { userId: context.principal.id },
+        order: { createdAt: "DESC", id: "DESC" },
+        skip: (query.page - 1) * query.limit,
+        take: query.limit,
+      });
+    // Do not expose administrator identity or internal report references.
+    return {
+      items: rows.map((row) => ({
+        id: row.id,
+        reason: row.reason,
+        createdAt: row.createdAt.toISOString(),
+      })),
+      meta: createPaginationMeta(query, total),
+    };
+  }
+
   private toUserRestrictionResponse(
     row: PostingRestrictionEntity,
     now: Date,
@@ -573,9 +625,14 @@ export class ModerationService {
     userId: string,
     options: PostingCheckOptions = {},
   ): Promise<boolean> {
+    if ((await this.getActivePostingRestrictions(userId, options)).length > 0)
+      return true;
     return (
-      (await this.getActivePostingRestrictions(userId, options)).length > 0
-    );
+      await sellerPostingReputation(
+        options.manager ?? this.dataSource.manager,
+        userId,
+      )
+    ).blocked;
   }
 
   /**
@@ -616,6 +673,13 @@ export class ModerationService {
       await this.getActivePostingRestrictions(userId, { manager, now }),
     );
     if (restriction) throw postingRestrictedException(restriction);
+    const reputation = await sellerPostingReputation(manager, userId);
+    if (reputation.blocked)
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: "REPUTATION_POSTING_RESTRICTED",
+        message: reputation.reason,
+      });
   }
 
   /** Lock the user row, then check restrictions at the post-lock instant. */

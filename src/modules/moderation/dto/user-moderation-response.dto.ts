@@ -26,6 +26,17 @@ export class UserModerationStatusResponse {
   scheduledRestrictions!: UserRestrictionResponse[];
   @ApiProperty()
   canCreatePost!: boolean;
+  @ApiProperty({
+    description:
+      "Automatic reputation warning and posting restriction based on current reviews.",
+  })
+  reputation!: {
+    reviewCount: number;
+    ratingAverage: number | null;
+    warning: boolean;
+    blocked: boolean;
+    reason: string | null;
+  };
 }
 
 export class UserRestrictionPageResponse {

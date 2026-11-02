@@ -7,8 +7,9 @@ import type {
 /**
  * Warnings and posting restrictions are admin-only. Admins may READ every
  * moderation record, including their own history (decision D1). CREATE and
- * LIFT never target the acting admin. Regular users get no capability here;
- * they only learn about their own restriction via POSTING_RESTRICTED.
+ * LIFT never target the acting admin. Regular users get no capability on
+ * administrative records here; AuthOnly self endpoints return sanitized
+ * status/history with ownership enforced inside ModerationService.
  */
 export function defineModerationRules(
   can: AbilityBuilder<AppAbility>["can"],

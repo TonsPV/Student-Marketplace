@@ -15,12 +15,14 @@ import {
   promotionStatus,
 } from "./post-promotion.entity";
 import { CreatePostPromotionDto } from "./dto/post-promotion.dto";
+import { PaymentOrder } from "../payments/payment.entity";
+import { UserEntity } from "../user/user.entity";
 
 /**
  * Admin-managed promotion data source for Unified Ranking (Phase 4 Step 2).
  * Actors: admins only (CASL subject "PostPromotion", admin-only policy —
- * mirrors defineModerationRules). Sellers cannot self-promote; there is no
- * payment flow in this scope. Rules enforced here:
+ * mirrors defineModerationRules). Shares the promotion source with paid
+ * seller boosts. Rules enforced here:
  *   - only ACTIVE, not soft-deleted, not expired posts can be promoted;
  *   - endsAt must be strictly after startsAt and in the future;
  *   - no overlapping non-cancelled window for the same post;
@@ -56,6 +58,14 @@ export class PostPromotionsService {
           .getOne();
         if (!post || post.deletedAt)
           throw new NotFoundException("Post not found");
+        if (
+          !(await manager.findOneBy(UserEntity, {
+            id: post.sellerId,
+            isLocked: false,
+          }))
+        ) {
+          throw new BadRequestException("Seller account is unavailable");
+        }
         if (post.status !== PostStatus.ACTIVE) {
           throw new BadRequestException(
             "Promotions can only target active posts",
@@ -122,23 +132,47 @@ export class PostPromotionsService {
     promotionId: string,
   ) {
     this.authorization.assertRoute(context, "cancel", "PostPromotion");
-    const promotion = await this.promotionsRepository.findOne({
-      where: { id: promotionId, postId },
+    return this.postsRepository.manager.transaction(async (manager) => {
+      // Serialize all promotion mutations with checkout/activation on this post.
+      await manager
+        .getRepository(PostEntity)
+        .createQueryBuilder("post")
+        .withDeleted()
+        .where("post.id = :postId", { postId })
+        .setLock("pessimistic_write")
+        .getOne();
+      const promotion = await manager.findOne(PostPromotionEntity, {
+        where: { id: promotionId, postId },
+        lock: { mode: "pessimistic_write" },
+      });
+      if (!promotion) throw new NotFoundException("Promotion not found");
+      if (promotion.cancelledAt) {
+        throw new ConflictException("Promotion already cancelled");
+      }
+      const [clock] = await manager.query("SELECT clock_timestamp() AS now");
+      const now = new Date(clock.now);
+      if (promotionStatus(promotion, now) === PromotionStatus.EXPIRED) {
+        throw new ConflictException("Promotion already expired");
+      }
+      promotion.cancelledAt = now;
+      promotion.cancelledById = context.principal.id;
+      if (promotion.orderId) {
+        // Money remains collected. Cancellation requires manual service/financial
+        // review; never imply a refund or leave fulfillment marked active.
+        await manager.update(
+          PaymentOrder,
+          { id: promotion.orderId, status: "paid" },
+          {
+            fulfillment: "requires_review",
+            reason: "promotion_cancelled_by_admin",
+          },
+        );
+      }
+      return this.toResponse(
+        await manager.save(PostPromotionEntity, promotion),
+        now,
+      );
     });
-    if (!promotion) throw new NotFoundException("Promotion not found");
-    if (promotion.cancelledAt) {
-      throw new ConflictException("Promotion already cancelled");
-    }
-    const now = new Date();
-    if (promotionStatus(promotion, now) === PromotionStatus.EXPIRED) {
-      throw new ConflictException("Promotion already expired");
-    }
-    promotion.cancelledAt = now;
-    promotion.cancelledById = context.principal.id;
-    return this.toResponse(
-      await this.promotionsRepository.save(promotion),
-      now,
-    );
   }
 
   private toResponse(promotion: PostPromotionEntity, now: Date) {

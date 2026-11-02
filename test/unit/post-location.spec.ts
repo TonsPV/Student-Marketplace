@@ -227,3 +227,8 @@ describe("post location API contract", () => {
     expect(repo.save).not.toHaveBeenCalled();
   });
 });
+jest.mock("../../src/modules/moderation/reputation-posting-policy", () => ({
+  sellerPostingReputation: jest
+    .fn()
+    .mockResolvedValue({ blocked: false, warning: false, reason: null }),
+}));

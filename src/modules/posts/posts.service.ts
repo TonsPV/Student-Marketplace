@@ -167,6 +167,7 @@ export class PostsService {
     const builder = this.listingQueryBuilder()
       .where("post.status = :status", { status: PostStatus.ACTIVE })
       .andWhere("post.deleted_at IS NULL")
+      .andWhere("seller.isLocked = false AND seller.deletedAt IS NULL")
       .andWhere(LISTING_EXPIRY_PREDICATE);
     if (categoryId)
       builder.andWhere("post.category_id = :categoryId", { categoryId });
@@ -267,6 +268,7 @@ export class PostsService {
       .addSelect(["category.id", "category.name"])
       .where("post.status = :status", { status: PostStatus.ACTIVE })
       .andWhere("post.deleted_at IS NULL")
+      .andWhere("seller.isLocked = false AND seller.deletedAt IS NULL")
       .andWhere(LISTING_EXPIRY_PREDICATE);
     this.joinListingReputation(queryBuilder);
     this.applyReputationFilter(queryBuilder, query.reputationLevel);
@@ -374,9 +376,14 @@ export class PostsService {
         {
           id,
           status: PostStatus.ACTIVE,
+          seller: { isLocked: false, deletedAt: IsNull() },
           expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
         },
-        { id, status: PostStatus.SOLD },
+        {
+          id,
+          status: PostStatus.SOLD,
+          seller: { isLocked: false, deletedAt: IsNull() },
+        },
       ],
       relations: {
         seller: true,
@@ -544,6 +551,7 @@ export class PostsService {
       where: {
         id,
         status: PostStatus.ACTIVE,
+        seller: { isLocked: false, deletedAt: IsNull() },
         expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
       },
     });

@@ -13,7 +13,7 @@ import {
 
 export class UpdateReviewDto {
   @ApiPropertyOptional({ minimum: 1, maximum: 5, example: 5 })
-  @IsOptional()
+  @ValidateIf((_object, value: unknown) => value !== undefined)
   @IsInt()
   @Min(1)
   @Max(5)

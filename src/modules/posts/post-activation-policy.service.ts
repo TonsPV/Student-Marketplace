@@ -35,7 +35,8 @@ export class PostActivationPolicyService {
     manager: EntityManager,
     sellerId: string,
   ): Promise<PostingDecision> {
-    // Reputation restrictions will be connected by Tấn through the token above.
+    // Production binds this token to ModerationPostingPolicy (manual and
+    // live reputation restrictions). Isolated consumers may omit the policy.
     if (!this.restrictions) {
       return {
         allowed: true,

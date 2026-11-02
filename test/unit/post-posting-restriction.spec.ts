@@ -1,3 +1,8 @@
+jest.mock("../../src/modules/moderation/reputation-posting-policy", () => ({
+  sellerPostingReputation: jest
+    .fn()
+    .mockResolvedValue({ blocked: false, warning: false, reason: null }),
+}));
 import { UserEntity } from "../../src/modules/user/user.entity";
 import "reflect-metadata";
 import { ForbiddenException } from "@nestjs/common";

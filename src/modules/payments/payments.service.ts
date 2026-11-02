@@ -46,8 +46,9 @@ export class PaymentsService implements OnModuleInit {
     m: EntityManager,
     post: PostEntity | null,
     owner: string,
+    hours: number,
   ) {
-    return (await this.eligibility.check(m, post, owner)).eligible;
+    return (await this.eligibility.check(m, post, owner, hours)).eligible;
   }
   onModuleInit() {
     this.secret();
@@ -141,7 +142,7 @@ export class PaymentsService implements OnModuleInit {
         .where("p.id=:postId", { postId: o.postId })
         .setLock("pessimistic_write")
         .getOne();
-      if (!(await this.eligible(m, post, owner)))
+      if (!(await this.eligible(m, post, owner, o.hours)))
         throw new ConflictException("Post cannot be promoted");
     }
     return this.project(o);
@@ -224,7 +225,7 @@ export class PaymentsService implements OnModuleInit {
         .where("p.id=:postId", { postId })
         .setLock("pessimistic_write")
         .getOne();
-      if (!(await this.eligible(m, post, owner)))
+      if (!(await this.eligible(m, post, owner, pack.hours)))
         throw new ConflictException("Post cannot be promoted");
       const open = await m.findOneBy(PaymentOrder, {
         postId,
@@ -378,9 +379,14 @@ export class PaymentsService implements OnModuleInit {
             return reply("99", "Invalid transaction");
           o.status = "paid";
           o.transactionNo = p.vnp_TransactionNo;
-          const eligibility = await this.eligibility.check(m, post, o.ownerId);
+          const eligibility = await this.eligibility.check(
+            m,
+            post,
+            o.ownerId,
+            o.hours,
+          );
           if (eligibility.eligible) {
-            const startsAt = new Date();
+            const startsAt = eligibility.checkedAt!;
             await m.save(
               m.create(Promotion, {
                 postId: o.postId,

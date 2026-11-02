@@ -11,7 +11,7 @@
 | Gia hạn miễn phí  | Một lần cho mỗi tin, chỉ khi đã hết hạn                                  |
 | Gia hạn tiếp theo | Cần thanh toán; module thanh toán sẽ nối vào nghiệp vụ dùng chung        |
 | Sửa/khôi phục     | Không đặt lại hạn, số lần gia hạn hoặc quyền miễn phí                    |
-| Kiểm duyệt        | Chưa triển khai trong phạm vi này                                        |
+| Kiểm duyệt        | Kiểm tra hạn chế của admin và uy tín trước khi kích hoạt                 |
 
 Tin chiếm quota khi `status = active`, `deleted_at IS NULL` và `expires_at > thời điểm hiện tại`.
 Tin đã bán, bị ẩn, đã xóa hoặc hết hạn không chiếm quota. Đẩy tin không tự tạo thêm suất hoặc kéo dài hạn.
@@ -214,3 +214,31 @@ Các migration nền `PostLifecycle1791810000000` và `PaymentsPromotions1791810
 - Pull đầy đủ code rồi chạy `npm run migration:run`. Không xóa lịch sử migration, không đánh dấu giả đã chạy và không cần reset DB.
 - Migration đã được ghi nhận không chạy lại. DB hiện đã áp dụng đủ migration chỉ cần khởi động lại BE để nhận thay đổi nghiệp vụ.
 - Rollback tự động bị chặn nếu migration nền nhận dùng cấu trúc của nhánh đã chạy trước đó; sửa bằng forward migration được kiểm tra riêng để bảo toàn dữ liệu.
+
+## Uy tín, cảnh báo và đẩy tin sau khi tích hợp
+
+- Quyền tạo/khôi phục tin đang hiển thị/gia hạn được kiểm tra trong transaction,
+  sau khi khóa seller. Từ 3 đánh giá: trung bình dưới 2 sao cảnh báo; dưới 1,5
+  sao chặn kích hoạt. Ngưỡng so sánh dùng tổng điểm chính xác, không dùng điểm
+  làm tròn hiển thị. Khi không còn thỏa điều kiện chặn, quyền được khôi phục
+  ngay ở lần kiểm tra tiếp theo; lệnh cấm riêng của admin vẫn giữ hiệu lực.
+- Không tự ẩn các tin còn hạn vì điểm uy tín thấp. Tài khoản bị khóa/xóa thì
+  tin không xuất hiện tại home/search/chi tiết công khai; thời gian đẩy vẫn chạy.
+- `GET /api/v1/user/me/moderation/status` thêm `reputation` gồm reviewCount,
+  ratingAverage, warning, blocked, reason. Quota trả postingAllowed/reason
+  theo cùng quy tắc.
+- Job mỗi 5 phút gửi một thông báo uy tín tự động cho mỗi seller đủ điều kiện;
+  khóa duy nhất chống gửi trùng kể cả nhiều BE chạy cùng lúc. Thông báo là
+  lịch sử tại lúc gửi; status và quyền đăng luôn tính theo điểm hiện tại,
+  không phụ thuộc job. Không tự tạo lệnh cấm admin hoặc UserWarning giả.
+- Cảnh báo admin và notification được lưu cùng transaction; socket phát sau
+  commit. `GET /api/v1/user/me/moderation/warnings?page=1&limit=20` trả lịch sử
+  của chính user, không trả danh tính admin hoặc tham chiếu report nội bộ.
+  Notification dùng type `moderation_warning`, target `posting_status` của user.
+- Hủy promotion trả phí giữ payment `paid`, chuyển fulfillment sang
+  `requires_review`, reason `promotion_cancelled_by_admin`. Không tự hoàn tiền.
+  Migration 179185 sửa dữ liệu hủy cũ còn fulfillment active, giữ lịch sử hủy;
+  rollback không tự đảo ngược dữ liệu tài chính hoặc xóa nhãn enum.
+- Mua/kích hoạt đẩy kiểm tra toàn bộ khoảng thời gian gói với các lịch admin.
+  Nếu lịch trùng phát sinh sau khi tạo đơn, kết quả đã thu tiền được lưu để
+  xử lý thủ công, không cấp đẩy chồng lên lịch đó.

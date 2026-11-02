@@ -1,4 +1,5 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, ForbiddenException } from "@nestjs/common";
+import { sellerPostingReputation } from "../moderation/reputation-posting-policy";
 import { EntityManager } from "typeorm";
 import { ModerationService } from "../moderation/moderation.service";
 import {
@@ -24,14 +25,23 @@ export class ModerationPostingPolicy implements PostingRestrictionPolicy {
         now: new Date(clock.now),
       }),
     );
+    const reputation = await sellerPostingReputation(manager, sellerId);
     return {
-      allowed: !restriction,
-      reason: restriction?.reason ?? null,
+      allowed: !restriction && !reputation.blocked,
+      reason: restriction?.reason ?? reputation.reason,
       blockedUntil: restriction?.expiresAt ?? null,
       limit: POST_QUOTA,
       ...(restriction
         ? { denial: postingRestrictedException(restriction) }
-        : {}),
+        : reputation.blocked
+          ? {
+              denial: new ForbiddenException({
+                statusCode: 403,
+                code: "REPUTATION_POSTING_RESTRICTED",
+                message: reputation.reason,
+              }),
+            }
+          : {}),
     };
   }
 }

@@ -28,4 +28,13 @@ export class UserModerationController {
   ) {
     return this.moderation.listMyPostingRestrictions(context, query);
   }
+
+  @Get("warnings")
+  @ResponseMessage("Warning history retrieved successfully")
+  getWarnings(
+    @GetAuthorizationContext() context: AuthenticatedContext,
+    @Query() query: PaginationDto,
+  ) {
+    return this.moderation.listMyWarnings(context, query);
+  }
 }
