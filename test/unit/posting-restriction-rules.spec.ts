@@ -1,3 +1,36 @@
+/**
+ * MODULE: MODERATION & POSTING RESTRICTIONS
+ *
+ * WORD TEST CASES:
+ * - TC-PRR-01: Restriction tạm thời chỉ active trong cửa sổ thời gian
+ * - TC-PRR-02: Hết hạn: exactly at expiresAt (expiresAt <= now is inactive)
+ * - TC-PRR-03: startsAt tương lai chưa active; startsAt == now thì active
+ * - TC-PRR-04: Ban vĩnh viễn active cho tới khi được gỡ (lift)
+ * - TC-PRR-05: Restriction tạm thời đã lift thì inactive kể cả trong cửa sổ
+ * - TC-PRR-06: Chấp nhận: a temporary window and a permanent ban
+ * - TC-PRR-07: Cho phép: a future startsAt
+ * - TC-PRR-08: Từ chối: missing expiresAt
+ * - TC-PRR-09: Từ chối: expiresAt == startsAt
+ * - TC-PRR-10: Từ chối: expiresAt < startsAt
+ * - TC-PRR-11: Từ chối: expiresAt in the past (with past startsAt)
+ * - TC-PRR-12: Từ chối: expiresAt == now (with past startsAt)
+ * - TC-PRR-13: Từ chối: permanent with expiresAt
+ * - TC-PRR-14: Từ chối: unknown type
+ * - TC-PRR-15: Từ chối: invalid startsAt
+ * - TC-PRR-16: Từ chối: invalid expiresAt
+ * - TC-PRR-17: Trả về: null when nothing is active
+ * - TC-PRR-18: Ưu tiên: a permanent ban, otherwise the latest expiry
+ * - TC-PRR-19: Tạo: a 403 with code, type, reason and ISO expiresAt
+ * - TC-PRR-20: Từ chối: now 10:00, startsAt 08:00, expiresAt 09:00 (already expired)
+ * - TC-PRR-21: Từ chối: expiresAt == now
+ * - TC-PRR-22: Từ chối: expiresAt < startsAt and expiresAt == startsAt
+ * - TC-PRR-23: Chấp nhận: expiresAt later than both now and startsAt
+ * - TC-PRR-24: Chấp nhận: a future startsAt with a later expiresAt
+ * - TC-PRR-25: Loại PERMANENT bắt buộc expiresAt = null
+ * - TC-PRR-26: Active khi now == startsAt; inactive khi now == expiresAt
+ * - TC-PRR-27: So sánh theo thời điểm tuyệt đối, không theo chuỗi (múi giờ tương đương)
+ */
+
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import {
   PostingRestrictionType,
@@ -23,11 +56,15 @@ function window(overrides: Partial<Parameters<typeof isRestrictionActive>[0]>) {
 
 describe("posting restriction rules", () => {
   describe("isRestrictionActive", () => {
-    it("temporary restriction is active inside its window", () => {
+    // [WORD-TC: TC-PRR-01]
+    // Chức năng: Restriction tạm thời chỉ active trong cửa sổ thời gian
+    it("[TC-PRR-01] Restriction tạm thời chỉ active trong cửa sổ thời gian", () => {
       expect(isRestrictionActive(window({}), NOW)).toBe(true);
     });
 
-    it("expires exactly at expiresAt (expiresAt <= now is inactive)", () => {
+    // [WORD-TC: TC-PRR-02]
+    // Chức năng: Hết hạn: exactly at expiresAt (expiresAt <= now is inactive)
+    it("[TC-PRR-02] Hết hạn: exactly at expiresAt (expiresAt <= now is inactive)", () => {
       expect(isRestrictionActive(window({ expiresAt: NOW }), NOW)).toBe(false);
       expect(isRestrictionActive(window({ expiresAt: at(-1) }), NOW)).toBe(
         false,
@@ -35,12 +72,16 @@ describe("posting restriction rules", () => {
       expect(isRestrictionActive(window({ expiresAt: at(1) }), NOW)).toBe(true);
     });
 
-    it("future startsAt is not active yet; startsAt == now is active", () => {
+    // [WORD-TC: TC-PRR-03]
+    // Chức năng: startsAt tương lai chưa active; startsAt == now thì active
+    it("[TC-PRR-03] startsAt tương lai chưa active; startsAt == now thì active", () => {
       expect(isRestrictionActive(window({ startsAt: at(1) }), NOW)).toBe(false);
       expect(isRestrictionActive(window({ startsAt: NOW }), NOW)).toBe(true);
     });
 
-    it("permanent ban stays active until lifted", () => {
+    // [WORD-TC: TC-PRR-04]
+    // Chức năng: Ban vĩnh viễn active cho tới khi được gỡ (lift)
+    it("[TC-PRR-04] Ban vĩnh viễn active cho tới khi được gỡ (lift)", () => {
       const ban = window({
         type: PostingRestrictionType.PERMANENT,
         expiresAt: null,
@@ -50,7 +91,9 @@ describe("posting restriction rules", () => {
       expect(isRestrictionActive({ ...ban, liftedAt: NOW }, NOW)).toBe(false);
     });
 
-    it("lifted temporary restriction is inactive even inside its window", () => {
+    // [WORD-TC: TC-PRR-05]
+    // Chức năng: Restriction tạm thời đã lift thì inactive kể cả trong cửa sổ
+    it("[TC-PRR-05] Restriction tạm thời đã lift thì inactive kể cả trong cửa sổ", () => {
       expect(isRestrictionActive(window({ liftedAt: at(-1) }), NOW)).toBe(
         false,
       );
@@ -58,7 +101,9 @@ describe("posting restriction rules", () => {
   });
 
   describe("assertValidRestrictionWindow", () => {
-    it("accepts a temporary window and a permanent ban", () => {
+    // [WORD-TC: TC-PRR-06]
+    // Chức năng: Chấp nhận: a temporary window and a permanent ban
+    it("[TC-PRR-06] Chấp nhận: a temporary window and a permanent ban", () => {
       expect(
         assertValidRestrictionWindow(
           PostingRestrictionType.TEMPORARY,
@@ -81,7 +126,9 @@ describe("posting restriction rules", () => {
       ).toBeNull();
     });
 
-    it("allows a future startsAt", () => {
+    // [WORD-TC: TC-PRR-07]
+    // Chức năng: Cho phép: a future startsAt
+    it("[TC-PRR-07] Cho phép: a future startsAt", () => {
       expect(
         assertValidRestrictionWindow(
           PostingRestrictionType.TEMPORARY,
@@ -92,6 +139,24 @@ describe("posting restriction rules", () => {
       ).toEqual(at(HOUR));
     });
 
+    // [WORD-TC: TC-PRR-08]
+    // Chức năng: Từ chối: missing expiresAt
+    // [WORD-TC: TC-PRR-09]
+    // Chức năng: Từ chối: expiresAt == startsAt
+    // [WORD-TC: TC-PRR-10]
+    // Chức năng: Từ chối: expiresAt < startsAt
+    // [WORD-TC: TC-PRR-11]
+    // Chức năng: Từ chối: expiresAt in the past (with past startsAt)
+    // [WORD-TC: TC-PRR-12]
+    // Chức năng: Từ chối: expiresAt == now (with past startsAt)
+    // [WORD-TC: TC-PRR-13]
+    // Chức năng: Từ chối: permanent with expiresAt
+    // [WORD-TC: TC-PRR-14]
+    // Chức năng: Từ chối: unknown type
+    // [WORD-TC: TC-PRR-15]
+    // Chức năng: Từ chối: invalid startsAt
+    // [WORD-TC: TC-PRR-16]
+    // Chức năng: Từ chối: invalid expiresAt
     it.each([
       ["missing expiresAt", PostingRestrictionType.TEMPORARY, NOW, null],
       ["expiresAt == startsAt", PostingRestrictionType.TEMPORARY, NOW, NOW],
@@ -127,7 +192,7 @@ describe("posting restriction rules", () => {
         NOW,
         new Date("x"),
       ],
-    ])("rejects %s", (_label, type, startsAt, expiresAt) => {
+    ])("[TC-PRR] Từ chối cấu hình thời gian hạn chế không hợp lệ: %s", (_label, type, startsAt, expiresAt) => {
       expect(() =>
         assertValidRestrictionWindow(type, startsAt, expiresAt, NOW),
       ).toThrow(BadRequestException);
@@ -140,11 +205,15 @@ describe("posting restriction rules", () => {
       reason,
     });
 
-    it("returns null when nothing is active", () => {
+    // [WORD-TC: TC-PRR-17]
+    // Chức năng: Trả về: null when nothing is active
+    it("[TC-PRR-17] Trả về: null when nothing is active", () => {
       expect(mostSevereRestriction([])).toBeNull();
     });
 
-    it("prefers a permanent ban, otherwise the latest expiry", () => {
+    // [WORD-TC: TC-PRR-18]
+    // Chức năng: Ưu tiên: a permanent ban, otherwise the latest expiry
+    it("[TC-PRR-18] Ưu tiên: a permanent ban, otherwise the latest expiry", () => {
       const ban = {
         ...window({ type: PostingRestrictionType.PERMANENT, expiresAt: null }),
         reason: "ban",
@@ -157,7 +226,9 @@ describe("posting restriction rules", () => {
       ).toBe("ban");
     });
 
-    it("builds a 403 with code, type, reason and ISO expiresAt", () => {
+    // [WORD-TC: TC-PRR-19]
+    // Chức năng: Tạo: a 403 with code, type, reason and ISO expiresAt
+    it("[TC-PRR-19] Tạo: a 403 with code, type, reason and ISO expiresAt", () => {
       const error = postingRestrictedException(temp(2, "spam"));
       expect(error).toBeInstanceOf(ForbiddenException);
       expect(error.getStatus()).toBe(403);
@@ -195,17 +266,23 @@ describe("restriction boundaries (Phase 1 corrective)", () => {
       now,
     );
 
-  it("rejects now 10:00, startsAt 08:00, expiresAt 09:00 (already expired)", () => {
+  // [WORD-TC: TC-PRR-20]
+  // Chức năng: Từ chối: now 10:00, startsAt 08:00, expiresAt 09:00 (already expired)
+  it("[TC-PRR-20] Từ chối: now 10:00, startsAt 08:00, expiresAt 09:00 (already expired)", () => {
     expect(temp(utc("08:00"), utc("09:00"))).toThrow(
       "expiresAt must be in the future",
     );
   });
 
-  it("rejects expiresAt == now", () => {
+  // [WORD-TC: TC-PRR-21]
+  // Chức năng: Từ chối: expiresAt == now
+  it("[TC-PRR-21] Từ chối: expiresAt == now", () => {
     expect(temp(utc("08:00"), now)).toThrow("expiresAt must be in the future");
   });
 
-  it("rejects expiresAt < startsAt and expiresAt == startsAt", () => {
+  // [WORD-TC: TC-PRR-22]
+  // Chức năng: Từ chối: expiresAt < startsAt and expiresAt == startsAt
+  it("[TC-PRR-22] Từ chối: expiresAt < startsAt and expiresAt == startsAt", () => {
     expect(temp(utc("12:00"), utc("11:00"))).toThrow(
       "expiresAt must be later than startsAt",
     );
@@ -214,14 +291,18 @@ describe("restriction boundaries (Phase 1 corrective)", () => {
     );
   });
 
-  it("accepts expiresAt later than both now and startsAt", () => {
+  // [WORD-TC: TC-PRR-23]
+  // Chức năng: Chấp nhận: expiresAt later than both now and startsAt
+  it("[TC-PRR-23] Chấp nhận: expiresAt later than both now and startsAt", () => {
     expect(temp(utc("08:00"), new Date(now.getTime() + 1))()).toMatchObject({
       expiresAt: new Date(now.getTime() + 1),
     });
     expect(temp(now, utc("11:00"))()).toMatchObject({ startsAt: now });
   });
 
-  it("accepts a future startsAt with a later expiresAt", () => {
+  // [WORD-TC: TC-PRR-24]
+  // Chức năng: Chấp nhận: a future startsAt with a later expiresAt
+  it("[TC-PRR-24] Chấp nhận: a future startsAt with a later expiresAt", () => {
     expect(temp(utc("12:00"), utc("13:00"))()).toEqual({
       type: PostingRestrictionType.TEMPORARY,
       startsAt: utc("12:00"),
@@ -229,7 +310,9 @@ describe("restriction boundaries (Phase 1 corrective)", () => {
     });
   });
 
-  it("PERMANENT requires expiresAt = null", () => {
+  // [WORD-TC: TC-PRR-25]
+  // Chức năng: Loại PERMANENT bắt buộc expiresAt = null
+  it("[TC-PRR-25] Loại PERMANENT bắt buộc expiresAt = null", () => {
     expect(
       assertValidRestrictionWindow(
         PostingRestrictionType.PERMANENT,
@@ -252,7 +335,9 @@ describe("restriction boundaries (Phase 1 corrective)", () => {
     ).toThrow("must not have expiresAt");
   });
 
-  it("now == startsAt is active; now == expiresAt is inactive", () => {
+  // [WORD-TC: TC-PRR-26]
+  // Chức năng: Active khi now == startsAt; inactive khi now == expiresAt
+  it("[TC-PRR-26] Active khi now == startsAt; inactive khi now == expiresAt", () => {
     const window = {
       type: PostingRestrictionType.TEMPORARY,
       startsAt: utc("10:00"),
@@ -266,7 +351,9 @@ describe("restriction boundaries (Phase 1 corrective)", () => {
     ).toBe(true);
   });
 
-  it("compares instants, not wall-clock strings (+07:00 == UTC)", () => {
+  // [WORD-TC: TC-PRR-27]
+  // Chức năng: So sánh theo thời điểm tuyệt đối, không theo chuỗi (múi giờ tương đương)
+  it("[TC-PRR-27] So sánh theo thời điểm tuyệt đối, không theo chuỗi (múi giờ tương đương)", () => {
     const window = {
       type: PostingRestrictionType.TEMPORARY,
       startsAt: new Date("2026-11-01T17:00:00+07:00"), // 10:00Z

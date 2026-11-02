@@ -1,3 +1,18 @@
+/**
+ * MODULE: POSTS (VÒNG ĐỜI TIN ĐĂNG)
+ *
+ * WORD TEST CASES:
+ * - TC-PSI-01: Từ chối hội thoại buyer có seller khác với seller của tin
+ * - TC-PSI-02: Từ chối hội thoại buyer chưa có tin nhắn nào của buyer
+ * - TC-PSI-03: Từ chối cho chính seller tự mua tin của mình
+ * - TC-PSI-04: Bán hàng cho buyer hợp lệ từ hội thoại của tin
+ * - TC-PSI-05: Chỉ emit sau commit; xác nhận lặp lại không gửi thông báo thêm lần nữa
+ * - TC-PSI-06: Giao dịch bán vẫn thành công (dữ liệu đã commit) dù realtime delivery lỗi
+ * - TC-PSI-07: Không emit lời mời đánh giá nếu lưu dữ liệu lời mời thất bại
+ * - TC-PSI-08: Hỗ trợ bán ngoài app (không cần buyer); từ chối dữ liệu purchased không nhất quán
+ * - TC-PSI-09: Review đã soft-delete vẫn giữ trạng thái 'đã đánh giá' trong danh sách purchased
+ */
+
 import "reflect-metadata";
 import { InternalServerErrorException, Logger } from "@nestjs/common";
 import { DataSource, Repository } from "typeorm";
@@ -108,7 +123,9 @@ describe("post sale invariants", () => {
     };
   }
 
-  it("rejects a buyer conversation whose seller differs from the post seller", async () => {
+  // [WORD-TC: TC-PSI-01]
+  // Chức năng: Từ chối hội thoại buyer có seller khác với seller của tin
+  it("[TC-PSI-01] Từ chối hội thoại buyer có seller khác với seller của tin", async () => {
     const post = Object.assign(new PostEntity(), {
       id: POST,
       sellerId: SELLER,
@@ -136,7 +153,9 @@ describe("post sale invariants", () => {
     expect(post.status).toBe(PostStatus.ACTIVE);
   });
 
-  it("rejects a buyer conversation without a buyer message", async () => {
+  // [WORD-TC: TC-PSI-02]
+  // Chức năng: Từ chối hội thoại buyer chưa có tin nhắn nào của buyer
+  it("[TC-PSI-02] Từ chối hội thoại buyer chưa có tin nhắn nào của buyer", async () => {
     const post = Object.assign(new PostEntity(), {
       id: POST,
       sellerId: SELLER,
@@ -150,7 +169,9 @@ describe("post sale invariants", () => {
     ).rejects.toThrow("Buyer has not contacted this post");
   });
 
-  it("rejects the seller as the buyer", async () => {
+  // [WORD-TC: TC-PSI-03]
+  // Chức năng: Từ chối cho chính seller tự mua tin của mình
+  it("[TC-PSI-03] Từ chối cho chính seller tự mua tin của mình", async () => {
     const post = Object.assign(new PostEntity(), {
       id: POST,
       sellerId: SELLER,
@@ -164,7 +185,9 @@ describe("post sale invariants", () => {
     ).rejects.toThrow("Buyer must be different from seller");
   });
 
-  it("sells to a buyer from the post's conversation", async () => {
+  // [WORD-TC: TC-PSI-04]
+  // Chức năng: Bán hàng cho buyer hợp lệ từ hội thoại của tin
+  it("[TC-PSI-04] Bán hàng cho buyer hợp lệ từ hội thoại của tin", async () => {
     const post = Object.assign(new PostEntity(), {
       id: POST,
       sellerId: SELLER,
@@ -189,7 +212,9 @@ describe("post sale invariants", () => {
     });
   });
 
-  it("emits only after commit, and repeat confirmation does not notify again", async () => {
+  // [WORD-TC: TC-PSI-05]
+  // Chức năng: Chỉ emit sau commit; xác nhận lặp lại không gửi thông báo thêm lần nữa
+  it("[TC-PSI-05] Chỉ emit sau commit; xác nhận lặp lại không gửi thông báo thêm lần nữa", async () => {
     const post = Object.assign(new PostEntity(), {
       id: POST,
       sellerId: SELLER,
@@ -219,7 +244,9 @@ describe("post sale invariants", () => {
     );
   });
 
-  it("returns the committed sale if realtime delivery throws", async () => {
+  // [WORD-TC: TC-PSI-06]
+  // Chức năng: Giao dịch bán vẫn thành công (dữ liệu đã commit) dù realtime delivery lỗi
+  it("[TC-PSI-06] Giao dịch bán vẫn thành công (dữ liệu đã commit) dù realtime delivery lỗi", async () => {
     const post = Object.assign(new PostEntity(), {
       id: POST,
       sellerId: SELLER,
@@ -254,7 +281,9 @@ describe("post sale invariants", () => {
     }
   });
 
-  it("does not emit an invitation if its persistence fails", async () => {
+  // [WORD-TC: TC-PSI-07]
+  // Chức năng: Không emit lời mời đánh giá nếu lưu dữ liệu lời mời thất bại
+  it("[TC-PSI-07] Không emit lời mời đánh giá nếu lưu dữ liệu lời mời thất bại", async () => {
     const post = Object.assign(new PostEntity(), {
       id: POST,
       sellerId: SELLER,
@@ -279,7 +308,9 @@ describe("post sale invariants", () => {
     expect(state.realtime.emitToUser).not.toHaveBeenCalled();
   });
 
-  it("sells outside the app without a buyer and rejects inconsistent purchased data", async () => {
+  // [WORD-TC: TC-PSI-08]
+  // Chức năng: Hỗ trợ bán ngoài app (không cần buyer); từ chối dữ liệu purchased không nhất quán
+  it("[TC-PSI-08] Hỗ trợ bán ngoài app (không cần buyer); từ chối dữ liệu purchased không nhất quán", async () => {
     const post = Object.assign(new PostEntity(), {
       id: POST,
       sellerId: SELLER,
@@ -316,7 +347,9 @@ describe("post sale invariants", () => {
     ).rejects.toBeInstanceOf(InternalServerErrorException);
   });
 
-  it("keeps a soft-deleted review marked as reviewed in purchased posts", async () => {
+  // [WORD-TC: TC-PSI-09]
+  // Chức năng: Review đã soft-delete vẫn giữ trạng thái 'đã đánh giá' trong danh sách purchased
+  it("[TC-PSI-09] Review đã soft-delete vẫn giữ trạng thái 'đã đánh giá' trong danh sách purchased", async () => {
     const soldAt = new Date();
     const post = Object.assign(new PostEntity(), {
       id: POST,

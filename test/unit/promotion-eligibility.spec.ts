@@ -1,3 +1,13 @@
+/**
+ * MODULE: PAYMENTS & PROMOTIONS
+ *
+ * WORD TEST CASES:
+ * - TC-PEL-01: Từ chối: expiry at database now %+d milliseconds while status is still active
+ * - TC-PEL-02: Từ chối: expiry at database now %+d milliseconds while status is still active
+ * - TC-PEL-03: Cho phép: an unexpired post and uses the database clock for active promotion checks
+ * - TC-PEL-04: Từ chối: invalid or absent deadlines
+ */
+
 import { EntityManager } from "typeorm";
 import { PromotionEligibilityService } from "../../src/modules/payments/promotion-eligibility.service";
 import { PostEntity, PostStatus } from "../../src/modules/posts/post.entity";
@@ -24,8 +34,12 @@ describe("promotion expiry eligibility", () => {
       deletedAt: null,
       expiresAt,
     });
+  // [WORD-TC: TC-PEL-01]
+  // Chức năng: Từ chối: expiry at database now %+d milliseconds while status is still active
+  // [WORD-TC: TC-PEL-02]
+  // Chức năng: Từ chối: expiry at database now %+d milliseconds while status is still active
   it.each([-1, 0])(
-    "rejects expiry at database now %+d milliseconds while status is still active",
+    "[TC-PEL] Từ chối hạn tin kết thúc tại DB now %+d ms khi tin vẫn active",
     async (offset) => {
       expect(
         await service.check(
@@ -40,7 +54,9 @@ describe("promotion expiry eligibility", () => {
       expect(manager.findOne).not.toHaveBeenCalled();
     },
   );
-  it("allows an unexpired post and uses the database clock for active promotion checks", async () => {
+  // [WORD-TC: TC-PEL-03]
+  // Chức năng: Cho phép: an unexpired post and uses the database clock for active promotion checks
+  it("[TC-PEL-03] Cho phép: an unexpired post and uses the database clock for active promotion checks", async () => {
     expect(
       await service.check(
         manager as unknown as EntityManager,
@@ -52,7 +68,9 @@ describe("promotion expiry eligibility", () => {
     expect(filters.startsAt.value).toEqual(clock);
     expect(filters.endsAt.value).toEqual(clock);
   });
-  it("rejects invalid or absent deadlines", async () => {
+  // [WORD-TC: TC-PEL-04]
+  // Chức năng: Từ chối: invalid or absent deadlines
+  it("[TC-PEL-04] Từ chối: invalid or absent deadlines", async () => {
     for (const expiresAt of [new Date(NaN), undefined]) {
       expect(
         await service.check(

@@ -1,3 +1,20 @@
+/**
+ * MODULE: CONVERSATIONS & MESSAGES
+ *
+ * WORD TEST CASES:
+ * - TC-MMAP-01: trả '[2 hình ảnh]' khi chỉ có 2 ảnh sau dedup
+ * - TC-MMAP-02: giữ nguyên content ngắn
+ * - TC-MMAP-03: cắt tối đa 100 code points, kết thúc … (150 code points)
+ * - TC-MMAP-04: không cắt nửa surrogate với emoji
+ * - TC-MMAP-05: loại trùng giữ thứ tự đầu tiên
+ * - TC-MMAP-06: mapper thuần: dùng đúng prepared args, giữ sequence string precision
+ * - TC-MMAP-07: message không ảnh → images rỗng, expiry null
+ * - TC-MMAP-08: sắp xếp theo position trước khi ký URL
+ * - TC-MMAP-09: cùng target/payload → giống nhau
+ * - TC-MMAP-10: khác order/content/target → khác nhau
+ * - TC-MMAP-11: content rỗng normalize thành null
+ */
+
 import "reflect-metadata";
 import {
   buildMessagePreview,
@@ -27,23 +44,31 @@ function core(overrides: Partial<MessageEntity> = {}): MessageEntity {
 }
 
 describe("buildMessagePreview (U4/U5)", () => {
-  it("trả '[2 hình ảnh]' khi chỉ có 2 ảnh sau dedup", () => {
+  // [WORD-TC: TC-MMAP-01]
+  // Chức năng: trả '[2 hình ảnh]' khi chỉ có 2 ảnh sau dedup
+  it("[TC-MMAP-01] trả '[2 hình ảnh]' khi chỉ có 2 ảnh sau dedup", () => {
     expect(buildMessagePreview(null, 2)).toBe("[2 hình ảnh]");
     expect(buildMessagePreview("   ", 1)).toBe("[Hình ảnh]");
   });
 
-  it("giữ nguyên content ngắn", () => {
+  // [WORD-TC: TC-MMAP-02]
+  // Chức năng: giữ nguyên content ngắn
+  it("[TC-MMAP-02] giữ nguyên content ngắn", () => {
     expect(buildMessagePreview("Còn hàng không?", 0)).toBe("Còn hàng không?");
   });
 
-  it("cắt tối đa 100 code points, kết thúc … (150 code points)", () => {
+  // [WORD-TC: TC-MMAP-03]
+  // Chức năng: cắt tối đa 100 code points, kết thúc … (150 code points)
+  it("[TC-MMAP-03] cắt tối đa 100 code points, kết thúc … (150 code points)", () => {
     const text = "a".repeat(150);
     const preview = buildMessagePreview(text, 0);
     expect(Array.from(preview).length).toBeLessThanOrEqual(100);
     expect(preview.endsWith("…")).toBe(true);
   });
 
-  it("không cắt nửa surrogate với emoji", () => {
+  // [WORD-TC: TC-MMAP-04]
+  // Chức năng: không cắt nửa surrogate với emoji
+  it("[TC-MMAP-04] không cắt nửa surrogate với emoji", () => {
     const text = "😀".repeat(150);
     const preview = buildMessagePreview(text, 0);
     expect(Array.from(preview).length).toBeLessThanOrEqual(100);
@@ -54,13 +79,17 @@ describe("buildMessagePreview (U4/U5)", () => {
 });
 
 describe("dedupKeys (U4)", () => {
-  it("loại trùng giữ thứ tự đầu tiên", () => {
+  // [WORD-TC: TC-MMAP-05]
+  // Chức năng: loại trùng giữ thứ tự đầu tiên
+  it("[TC-MMAP-05] loại trùng giữ thứ tự đầu tiên", () => {
     expect(dedupKeys(["b", "a", "b", "c", "a"])).toEqual(["b", "a", "c"]);
   });
 });
 
 describe("toMessageResponse (U13)", () => {
-  it("mapper thuần: dùng đúng prepared args, giữ sequence string precision", () => {
+  // [WORD-TC: TC-MMAP-06]
+  // Chức năng: mapper thuần: dùng đúng prepared args, giữ sequence string precision
+  it("[TC-MMAP-06] mapper thuần: dùng đúng prepared args, giữ sequence string precision", () => {
     const dto = toMessageResponse(core(), {
       urls: ["https://signed/1", "https://signed/2"],
       expiresAt: "2026-10-06T01:00:00.000Z",
@@ -71,7 +100,9 @@ describe("toMessageResponse (U13)", () => {
     expect(dto.clientId).toBe("client-1");
   });
 
-  it("message không ảnh → images rỗng, expiry null", () => {
+  // [WORD-TC: TC-MMAP-07]
+  // Chức năng: message không ảnh → images rỗng, expiry null
+  it("[TC-MMAP-07] message không ảnh → images rỗng, expiry null", () => {
     const dto = toMessageResponse(core(), { urls: [], expiresAt: null });
     expect(dto.images).toEqual([]);
     expect(dto.imagesExpireAt).toBeNull();
@@ -79,7 +110,9 @@ describe("toMessageResponse (U13)", () => {
 });
 
 describe("sortImagesByPosition", () => {
-  it("sắp xếp theo position trước khi ký URL", () => {
+  // [WORD-TC: TC-MMAP-08]
+  // Chức năng: sắp xếp theo position trước khi ký URL
+  it("[TC-MMAP-08] sắp xếp theo position trước khi ký URL", () => {
     const sorted = sortImagesByPosition([
       { position: 2, key: "c" },
       { position: 0, key: "a" },
@@ -90,7 +123,9 @@ describe("sortImagesByPosition", () => {
 });
 
 describe("idempotency payload (U14)", () => {
-  it("cùng target/payload → giống nhau", () => {
+  // [WORD-TC: TC-MMAP-09]
+  // Chức năng: cùng target/payload → giống nhau
+  it("[TC-MMAP-09] cùng target/payload → giống nhau", () => {
     const a = normalizeIdempotencyPayload(CONV, "  hello  ", [
       "k1",
       "k1",
@@ -102,7 +137,9 @@ describe("idempotency payload (U14)", () => {
     expect(isSameIdempotencyPayload(a, b)).toBe(true);
   });
 
-  it("khác order/content/target → khác nhau", () => {
+  // [WORD-TC: TC-MMAP-10]
+  // Chức năng: khác order/content/target → khác nhau
+  it("[TC-MMAP-10] khác order/content/target → khác nhau", () => {
     const base = normalizeIdempotencyPayload(CONV, "hello", ["k1", "k2"]);
     expect(
       isSameIdempotencyPayload(
@@ -128,7 +165,9 @@ describe("idempotency payload (U14)", () => {
     ).toBe(false);
   });
 
-  it("content rỗng normalize thành null", () => {
+  // [WORD-TC: TC-MMAP-11]
+  // Chức năng: content rỗng normalize thành null
+  it("[TC-MMAP-11] content rỗng normalize thành null", () => {
     expect(normalizeIdempotencyPayload(CONV, "   ", []).content).toBeNull();
     expect(normalizeIdempotencyPayload(CONV, undefined, []).content).toBeNull();
   });

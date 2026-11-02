@@ -1,3 +1,13 @@
+/**
+ * MODULE: MODERATION & POSTING RESTRICTIONS
+ *
+ * WORD TEST CASES:
+ * - TC-MPL-01: Admin được warn/restrict/lift người khác nhưng không tự thao tác với chính mình
+ * - TC-MPL-02: Admin đọc được mọi bản ghi moderation, kể cả của chính mình
+ * - TC-MPL-03: User thường và guest không có bất kỳ capability moderation nào
+ * - TC-MPL-04: Không mở rộng quyền đã có trên Review, Post, User
+ */
+
 import { subject } from "@casl/ability";
 import { CaslAbilityFactory } from "../../src/modules/authorization/casl-ability.factory";
 
@@ -13,7 +23,9 @@ const actor = (id: string, isAdmin: boolean) =>
   });
 
 describe("moderation CASL policy", () => {
-  it("admin may warn/restrict/lift other users but never themselves", () => {
+  // [WORD-TC: TC-MPL-01]
+  // Chức năng: Admin được warn/restrict/lift người khác nhưng không tự thao tác với chính mình
+  it("[TC-MPL-01] Admin được warn/restrict/lift người khác nhưng không tự thao tác với chính mình", () => {
     const admin = actor(ADMIN, true);
     // CASL tags the object passed to subject(), so build a fresh one per call.
     const other = () => ({ userId: USER });
@@ -38,7 +50,9 @@ describe("moderation CASL policy", () => {
     );
   });
 
-  it("D1: admin may read every moderation record, including their own", () => {
+  // [WORD-TC: TC-MPL-02]
+  // Chức năng: Admin đọc được mọi bản ghi moderation, kể cả của chính mình
+  it("[TC-MPL-02] Admin đọc được mọi bản ghi moderation, kể cả của chính mình", () => {
     const admin = actor(ADMIN, true);
     for (const userId of [USER, ADMIN]) {
       expect(admin.can("read", subject("UserWarning", { userId }))).toBe(true);
@@ -48,7 +62,9 @@ describe("moderation CASL policy", () => {
     }
   });
 
-  it("regular users and guests get no moderation capability", () => {
+  // [WORD-TC: TC-MPL-03]
+  // Chức năng: User thường và guest không có bất kỳ capability moderation nào
+  it("[TC-MPL-03] User thường và guest không có bất kỳ capability moderation nào", () => {
     for (const ability of [actor(USER, false), factory.createForActor(null)]) {
       expect(ability.can("create", "UserWarning")).toBe(false);
       expect(ability.can("read", "UserWarning")).toBe(false);
@@ -61,7 +77,9 @@ describe("moderation CASL policy", () => {
     }
   });
 
-  it("does not widen existing Review, Post or User capabilities", () => {
+  // [WORD-TC: TC-MPL-04]
+  // Chức năng: Không mở rộng quyền đã có trên Review, Post, User
+  it("[TC-MPL-04] Không mở rộng quyền đã có trên Review, Post, User", () => {
     const admin = actor(ADMIN, true);
     expect(admin.can("delete", subject("Review", { reviewerId: USER }))).toBe(
       false,

@@ -1,3 +1,14 @@
+/**
+ * MODULE: REALTIME (WEBSOCKET)
+ *
+ * WORD TEST CASES:
+ * - TC-TIK-01: REST access key bị từ chối làm socket ticket; hết hạn ticket không rút ngắn session
+ * - TC-TIK-02: Ticket hết hạn không mở được socket mới, kể cả khi access session còn hiệu lực
+ * - TC-TIK-03: Client dùng access-JWT cũ vẫn xác thực bình thường
+ * - TC-TIK-04: Tài khoản bị khóa không thể lấy ticket
+ * - TC-TIK-05: Yêu cầu location được xác nhận từ DB, bất kể token claims nói onboarding đã xong
+ */
+
 import "reflect-metadata";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
@@ -24,7 +35,9 @@ describe("isolated socket tickets", () => {
       isAdmin: false,
     }),
   );
-  it("REST access key rejects a socket ticket; ticket expiry does not shorten the session", async () => {
+  // [WORD-TC: TC-TIK-01]
+  // Chức năng: REST access key bị từ chối làm socket ticket; hết hạn ticket không rút ngắn session
+  it("[TC-TIK-01] REST access key bị từ chối làm socket ticket; hết hạn ticket không rút ngắn session", async () => {
     const access = jwt.sign({ id }, { expiresIn: "15m" });
     const issued = await tickets.issue(access);
     await expect(jwt.verifyAsync(issued.ticket)).rejects.toThrow();
@@ -35,7 +48,9 @@ describe("isolated socket tickets", () => {
         new Date(issued.expiresAt).getTime(),
     ).toBeGreaterThan(800000);
   });
-  it("expired ticket cannot start a new socket, even while the access session is valid", async () => {
+  // [WORD-TC: TC-TIK-02]
+  // Chức năng: Ticket hết hạn không mở được socket mới, kể cả khi access session còn hiệu lực
+  it("[TC-TIK-02] Ticket hết hạn không mở được socket mới, kể cả khi access session còn hiệu lực", async () => {
     const ticketKey = createHmac("sha256", secret)
       .update("campusmarket:socket")
       .digest("hex");
@@ -51,17 +66,23 @@ describe("isolated socket tickets", () => {
     );
     await expect(tickets.verify(expired)).rejects.toThrow();
   });
-  it("existing access-JWT clients continue to authenticate", async () => {
+  // [WORD-TC: TC-TIK-03]
+  // Chức năng: Client dùng access-JWT cũ vẫn xác thực bình thường
+  it("[TC-TIK-03] Client dùng access-JWT cũ vẫn xác thực bình thường", async () => {
     const access = jwt.sign({ id }, { expiresIn: "15m" });
     expect((await tickets.verify(access)).id).toBe(id);
   });
-  it("locked accounts cannot obtain a ticket", async () => {
+  // [WORD-TC: TC-TIK-04]
+  // Chức năng: Tài khoản bị khóa không thể lấy ticket
+  it("[TC-TIK-04] Tài khoản bị khóa không thể lấy ticket", async () => {
     active.mockRejectedValue(new Error("locked"));
     await expect(
       tickets.issue(jwt.sign({ id }, { expiresIn: "15m" })),
     ).rejects.toThrow("locked");
   });
-  it("requires DB-confirmed location even if token claims say onboarding is complete", async () => {
+  // [WORD-TC: TC-TIK-05]
+  // Chức năng: Yêu cầu location được xác nhận từ DB, bất kể token claims nói onboarding đã xong
+  it("[TC-TIK-05] Yêu cầu location được xác nhận từ DB, bất kể token claims nói onboarding đã xong", async () => {
     active.mockResolvedValue({
       id,
       email: "test@example.com",

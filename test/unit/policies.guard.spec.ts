@@ -1,3 +1,19 @@
+/**
+ * MODULE: AUTHORIZATION (CASL & GUARDS)
+ *
+ * WORD TEST CASES:
+ * - TC-GRD-01: Actor đã xác thực được truyền vào policy; thiếu actor → Unauthorized (401)
+ * - TC-GRD-02: Metadata cấp method ghi đè metadata cấp class
+ * - TC-GRD-03: Nhiều yêu cầu policy kết hợp theo logic AND
+ * - TC-GRD-04: Route AuthOnly yêu cầu actor, thiếu actor bị từ chối
+ * - TC-GRD-05: Khai báo Public + Policy mâu thuẫn → từ chối khi khởi tạo (thứ tự false)
+ * - TC-GRD-06: Khai báo Public + Policy mâu thuẫn → từ chối khi khởi tạo (thứ tự true)
+ * - TC-GRD-07: Khai báo AuthOnly + Policy mâu thuẫn → từ chối khi khởi tạo (thứ tự false)
+ * - TC-GRD-08: Khai báo AuthOnly + Policy mâu thuẫn → từ chối khi khởi tạo (thứ tự true)
+ * - TC-GRD-09: Route không khai báo quyền truy cập → mặc định từ chối (deny)
+ * - TC-GRD-10: Metadata action/subject không hợp lệ khi runtime → guard báo lỗi
+ */
+
 import { Reflector } from "@nestjs/core";
 import { UnauthorizedException, ForbiddenException } from "@nestjs/common";
 import { PoliciesGuard } from "../../src/modules/authorization/guards/policies.guard";
@@ -32,7 +48,9 @@ function httpContext(
 }
 
 describe("PoliciesGuard (spec G01-G04)", () => {
-  test("G01 authenticated actor visible to policy; missing actor 401", async () => {
+  // [WORD-TC: TC-GRD-01]
+  // Chức năng: Actor đã xác thực được truyền vào policy; thiếu actor → Unauthorized (401)
+  test("[TC-GRD-01] Actor đã xác thực được truyền vào policy; thiếu actor → Unauthorized (401)", async () => {
     class C {
       @CheckPolicies({ action: "read", subject: "Conversation" })
       handler() {}
@@ -52,7 +70,9 @@ describe("PoliciesGuard (spec G01-G04)", () => {
     );
   });
 
-  test("G02 method descriptor overrides class descriptor", async () => {
+  // [WORD-TC: TC-GRD-02]
+  // Chức năng: Metadata cấp method ghi đè metadata cấp class
+  test("[TC-GRD-02] Metadata cấp method ghi đè metadata cấp class", async () => {
     @CheckPolicies({ action: "delete", subject: "Category" })
     class PrivateController {
       @Public()
@@ -68,7 +88,9 @@ describe("PoliciesGuard (spec G01-G04)", () => {
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
   });
 
-  test("G04 AND over multiple requirements", async () => {
+  // [WORD-TC: TC-GRD-03]
+  // Chức năng: Nhiều yêu cầu policy kết hợp theo logic AND
+  test("[TC-GRD-03] Nhiều yêu cầu policy kết hợp theo logic AND", async () => {
     class C {
       @CheckPolicies(
         { action: "read", subject: "Conversation" },
@@ -96,7 +118,9 @@ describe("PoliciesGuard (spec G01-G04)", () => {
     await expect(guard.canActivate(adminCtx)).resolves.toBe(true);
   });
 
-  test("AuthOnly requires actor", async () => {
+  // [WORD-TC: TC-GRD-04]
+  // Chức năng: Route AuthOnly yêu cầu actor, thiếu actor bị từ chối
+  test("[TC-GRD-04] Route AuthOnly yêu cầu actor, thiếu actor bị từ chối", async () => {
     class C {
       @AuthOnly()
       handler() {}
@@ -111,8 +135,12 @@ describe("PoliciesGuard (spec G01-G04)", () => {
 
 // Conflicts must survive decorator application order instead of last-write winning.
 describe("route descriptor strictness", () => {
+  // [WORD-TC: TC-GRD-05]
+  // Chức năng: Khai báo Public + Policy mâu thuẫn → từ chối khi khởi tạo (thứ tự false)
+  // [WORD-TC: TC-GRD-06]
+  // Chức năng: Khai báo Public + Policy mâu thuẫn → từ chối khi khởi tạo (thứ tự true)
   test.each([false, true])(
-    "Public/Policy conflict rejects in either order (%s)",
+    "[TC-GRD] Khai báo Public và Policy mâu thuẫn sẽ bị từ chối (%s)",
     async (reverse) => {
       class C {
         handler() {}
@@ -132,8 +160,12 @@ describe("route descriptor strictness", () => {
       ).rejects.toThrow("Conflicting route metadata");
     },
   );
+  // [WORD-TC: TC-GRD-07]
+  // Chức năng: Khai báo AuthOnly + Policy mâu thuẫn → từ chối khi khởi tạo (thứ tự false)
+  // [WORD-TC: TC-GRD-08]
+  // Chức năng: Khai báo AuthOnly + Policy mâu thuẫn → từ chối khi khởi tạo (thứ tự true)
   test.each([false, true])(
-    "AuthOnly/Policy conflict rejects in either order (%s)",
+    "[TC-GRD] Khai báo AuthOnly và Policy mâu thuẫn sẽ bị từ chối (%s)",
     async (reverse) => {
       class C {
         handler() {}
@@ -153,7 +185,9 @@ describe("route descriptor strictness", () => {
       ).rejects.toThrow("Conflicting route metadata");
     },
   );
-  test("missing access declaration defaults to deny", async () => {
+  // [WORD-TC: TC-GRD-09]
+  // Chức năng: Route không khai báo quyền truy cập → mặc định từ chối (deny)
+  test("[TC-GRD-09] Route không khai báo quyền truy cập → mặc định từ chối (deny)", async () => {
     class C {
       handler() {}
     }
@@ -161,7 +195,9 @@ describe("route descriptor strictness", () => {
       makeGuard().canActivate(httpContext(C.prototype.handler, C)),
     ).rejects.toThrow("Missing route authorization metadata");
   });
-  test("invalid runtime action/subject metadata fails", async () => {
+  // [WORD-TC: TC-GRD-10]
+  // Chức năng: Metadata action/subject không hợp lệ khi runtime → guard báo lỗi
+  test("[TC-GRD-10] Metadata action/subject không hợp lệ khi runtime → guard báo lỗi", async () => {
     class C {
       handler() {}
     }

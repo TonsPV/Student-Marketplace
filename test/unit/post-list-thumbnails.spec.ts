@@ -1,3 +1,12 @@
+/**
+ * MODULE: POSTS (VÒNG ĐỜI TIN ĐĂNG)
+ *
+ * WORD TEST CASES:
+ * - TC-PTH-01: Tải 10 cover của trang bằng một truy vấn; chỉ ký URL cho ảnh storage được chọn
+ * - TC-PTH-02: Trang rỗng không phát sinh truy vấn cover
+ * - TC-PTH-03: Tin vẫn hiển thị được khi không ký được URL cover
+ */
+
 import "reflect-metadata";
 import { DataSource, Repository } from "typeorm";
 import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
@@ -92,7 +101,9 @@ describe("post list covers", () => {
     );
   });
 
-  it("loads ten covers with one query and signs only selected storage images", async () => {
+  // [WORD-TC: TC-PTH-01]
+  // Chức năng: Tải 10 cover của trang bằng một truy vấn; chỉ ký URL cho ảnh storage được chọn
+  it("[TC-PTH-01] Tải 10 cover của trang bằng một truy vấn; chỉ ký URL cho ảnh storage được chọn", async () => {
     const result = await service.findAll({ page: 1, limit: 10 }, context);
     expect(result.items).toHaveLength(10);
     expect(getRepository).toHaveBeenCalledTimes(1);
@@ -116,7 +127,9 @@ describe("post list covers", () => {
     expect(JSON.stringify(result)).not.toContain("storageKey");
   });
 
-  it("does no cover query for an empty page", async () => {
+  // [WORD-TC: TC-PTH-02]
+  // Chức năng: Trang rỗng không phát sinh truy vấn cover
+  it("[TC-PTH-02] Trang rỗng không phát sinh truy vấn cover", async () => {
     posts = [];
     expect(
       (await service.findAll({ page: 1, limit: 10 }, context)).items,
@@ -125,7 +138,9 @@ describe("post list covers", () => {
     expect(presignGet).not.toHaveBeenCalled();
   });
 
-  it("keeps posts readable when a cover cannot be signed", async () => {
+  // [WORD-TC: TC-PTH-03]
+  // Chức năng: Tin vẫn hiển thị được khi không ký được URL cover
+  it("[TC-PTH-03] Tin vẫn hiển thị được khi không ký được URL cover", async () => {
     presignGet.mockRejectedValue(new Error("Storage signing unavailable"));
     const result = await service.findAll({ page: 1, limit: 10 }, context);
     expect(result.items).toHaveLength(10);

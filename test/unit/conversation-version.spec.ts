@@ -1,15 +1,27 @@
+/**
+ * MODULE: CONVERSATIONS & MESSAGES
+ *
+ * WORD TEST CASES:
+ * - TC-CVER-01: nextVersion giữ precision vượt MAX_SAFE_INTEGER
+ * - TC-CVER-02: order số học bằng BigInt, không lexical string
+ */
+
 import "reflect-metadata";
 import { ConversationsService } from "src/modules/conversations/conversations.service";
 
 describe("bigint version/watermark helpers (U14)", () => {
-  it("nextVersion giữ precision vượt MAX_SAFE_INTEGER", () => {
+  // [WORD-TC: TC-CVER-01]
+  // Chức năng: nextVersion giữ precision vượt MAX_SAFE_INTEGER
+  it("[TC-CVER-01] nextVersion giữ precision vượt MAX_SAFE_INTEGER", () => {
     expect(ConversationsService.nextVersion("9007199254740993")).toBe(
       "9007199254740994",
     );
     expect(ConversationsService.nextVersion("0")).toBe("1");
   });
 
-  it("order số học bằng BigInt, không lexical string", () => {
+  // [WORD-TC: TC-CVER-02]
+  // Chức năng: order số học bằng BigInt, không lexical string
+  it("[TC-CVER-02] order số học bằng BigInt, không lexical string", () => {
     // '10' < '9' theo lexical — thứ tự thật phải numeric.
     expect("10" < "9").toBe(true);
     expect(BigInt("10") > BigInt("9")).toBe(true);

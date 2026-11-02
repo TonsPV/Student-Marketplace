@@ -1,3 +1,10 @@
+/**
+ * MODULE: AUTHORIZATION (CASL & GUARDS)
+ *
+ * WORD TEST CASES:
+ * - TC-AUT-01: assertRoute với cặp action/subject hợp lệ không ném lỗi; API giữ nguyên typing CASL thật
+ */
+
 import { subject } from "@casl/ability";
 import { CheckPolicies } from "../../src/modules/authorization/decorators/check-policies.decorator";
 import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
@@ -22,7 +29,9 @@ function typeContract(
   CheckPolicies({ action: "markRead", subject: "Post" });
 }
 void typeContract;
-it("public API uses the real CASL typings and valid typed route capabilities", () => {
+// [WORD-TC: TC-AUT-01]
+// Chức năng: assertRoute với cặp action/subject hợp lệ không ném lỗi; API giữ nguyên typing CASL thật
+it("[TC-AUT-01] assertRoute với cặp action/subject hợp lệ không ném lỗi; API giữ nguyên typing CASL thật", () => {
   const service = new AuthorizationService(new CaslAbilityFactory());
   expect(() =>
     service.assertRoute(service.createGuestContext(), "read", "Post"),

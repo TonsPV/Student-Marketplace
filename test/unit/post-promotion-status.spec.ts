@@ -1,3 +1,13 @@
+/**
+ * MODULE: PAYMENTS & PROMOTIONS
+ *
+ * WORD TEST CASES:
+ * - TC-PST-01: ACTIVE khi startsAt <= now < endsAt và chưa bị hủy
+ * - TC-PST-02: Trước startsAt là SCHEDULED và không bao giờ được ranking boost
+ * - TC-PST-03: Sau endsAt là EXPIRED và không bao giờ được ranking boost
+ * - TC-PST-04: CANCELLED đè lên cửa sổ thời gian (quá khứ hoặc tương lai)
+ */
+
 import {
   PostPromotionEntity,
   PromotionStatus,
@@ -21,7 +31,9 @@ function promotion(
 }
 
 describe("promotion lifecycle is derived from timestamps", () => {
-  it("ACTIVE while startsAt <= now < endsAt and not cancelled", () => {
+  // [WORD-TC: TC-PST-01]
+  // Chức năng: ACTIVE khi startsAt <= now < endsAt và chưa bị hủy
+  it("[TC-PST-01] ACTIVE khi startsAt <= now < endsAt và chưa bị hủy", () => {
     expect(promotionStatus(promotion(), NOW)).toBe(PromotionStatus.ACTIVE);
     // Boundary: exactly at starts_at is already active.
     expect(
@@ -29,7 +41,9 @@ describe("promotion lifecycle is derived from timestamps", () => {
     ).toBe(PromotionStatus.ACTIVE);
   });
 
-  it("SCHEDULED before startsAt — never boosted by ranking", () => {
+  // [WORD-TC: TC-PST-02]
+  // Chức năng: Trước startsAt là SCHEDULED và không bao giờ được ranking boost
+  it("[TC-PST-02] Trước startsAt là SCHEDULED và không bao giờ được ranking boost", () => {
     expect(
       promotionStatus(
         promotion({ startsAt: new Date(NOW.getTime() + minute) }),
@@ -38,7 +52,9 @@ describe("promotion lifecycle is derived from timestamps", () => {
     ).toBe(PromotionStatus.SCHEDULED);
   });
 
-  it("EXPIRED once endsAt <= now — never boosted by ranking", () => {
+  // [WORD-TC: TC-PST-03]
+  // Chức năng: Sau endsAt là EXPIRED và không bao giờ được ranking boost
+  it("[TC-PST-03] Sau endsAt là EXPIRED và không bao giờ được ranking boost", () => {
     expect(
       promotionStatus(
         promotion({ endsAt: new Date(NOW.getTime() - minute) }),
@@ -51,7 +67,9 @@ describe("promotion lifecycle is derived from timestamps", () => {
     );
   });
 
-  it("CANCELLED overrides the window, past or future", () => {
+  // [WORD-TC: TC-PST-04]
+  // Chức năng: CANCELLED đè lên cửa sổ thời gian (quá khứ hoặc tương lai)
+  it("[TC-PST-04] CANCELLED đè lên cửa sổ thời gian (quá khứ hoặc tương lai)", () => {
     expect(
       promotionStatus(promotion({ cancelledAt: NOW }), NOW),
     ).toBe(PromotionStatus.CANCELLED);

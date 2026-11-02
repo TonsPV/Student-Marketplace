@@ -1,3 +1,15 @@
+/**
+ * MODULE: USERS & HỒ SƠ CÁ NHÂN
+ *
+ * WORD TEST CASES:
+ * - TC-USR-01: Trả về cờ isAdmin từ DB và tọa độ dạng tên (longitude/latitude) từ GeoJSON
+ * - TC-USR-02: Location chưa đặt → null; user thường → isAdmin = false
+ * - TC-USR-03: Giữ nguyên tọa độ 0 (không bị chuyển thành null)
+ * - TC-USR-04: Không lộ vị trí cá nhân qua profile công khai
+ * - TC-USR-05: Không cho phép sửa isAdmin qua PATCH /me
+ * - TC-USR-06: Không cho phép sửa location qua PATCH /me
+ */
+
 import "reflect-metadata";
 import { Repository } from "typeorm";
 import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
@@ -44,7 +56,9 @@ describe("personal profile fields", () => {
     );
   });
 
-  it("returns DB admin flag and converts longitude/latitude from GeoJSON", async () => {
+  // [WORD-TC: TC-USR-01]
+  // Chức năng: Trả về cờ isAdmin từ DB và tọa độ dạng tên (longitude/latitude) từ GeoJSON
+  it("[TC-USR-01] Trả về cờ isAdmin từ DB và tọa độ dạng tên (longitude/latitude) từ GeoJSON", async () => {
     const result = await service.getMyProfile(context);
     expect(result).toMatchObject({
       id: ID,
@@ -55,7 +69,9 @@ describe("personal profile fields", () => {
     expect(result).not.toHaveProperty("password");
     expect(result).not.toHaveProperty("avatarStorageKey");
   });
-  it("returns null when location is unset and false for a regular user", async () => {
+  // [WORD-TC: TC-USR-02]
+  // Chức năng: Location chưa đặt → null; user thường → isAdmin = false
+  it("[TC-USR-02] Location chưa đặt → null; user thường → isAdmin = false", async () => {
     user.location = null;
     user.isAdmin = false;
     expect(await service.getMyProfile(context)).toMatchObject({
@@ -63,20 +79,28 @@ describe("personal profile fields", () => {
       isAdmin: false,
     });
   });
-  it("preserves zero coordinates", async () => {
+  // [WORD-TC: TC-USR-03]
+  // Chức năng: Giữ nguyên tọa độ 0 (không bị chuyển thành null)
+  it("[TC-USR-03] Giữ nguyên tọa độ 0 (không bị chuyển thành null)", async () => {
     user.location = { type: "Point", coordinates: [0, 0] };
     expect((await service.getMyProfile(context)).location).toEqual({
       latitude: 0,
       longitude: 0,
     });
   });
-  it("does not expose personal location through the public user profile", async () => {
+  // [WORD-TC: TC-USR-04]
+  // Chức năng: Không lộ vị trí cá nhân qua profile công khai
+  it("[TC-USR-04] Không lộ vị trí cá nhân qua profile công khai", async () => {
     const result = await service.getUserProfile(ID, context);
     expect(result).not.toHaveProperty("location");
     expect(result).not.toHaveProperty("isAdmin");
   });
+  // [WORD-TC: TC-USR-05]
+  // Chức năng: Không cho phép sửa isAdmin qua PATCH /me
+  // [WORD-TC: TC-USR-06]
+  // Chức năng: Không cho phép sửa location qua PATCH /me
   it.each(["isAdmin", "location"])(
-    "does not permit modifying %s through PATCH me",
+    "[TC-USR] Không cho phép sửa trường %s thông qua PATCH /me",
     async (field) => {
       const patch = Object.assign(new UpdateUserDto(), {
         [field]: field === "isAdmin" ? true : { latitude: 1, longitude: 2 },

@@ -1,3 +1,12 @@
+/**
+ * MODULE: REVIEWS (ĐÁNH GIÁ NGƯỜI BÁN)
+ *
+ * WORD TEST CASES:
+ * - TC-RRES-01: Response tạo review chứa metadata chỉnh sửa mặc định
+ * - TC-RRES-02: GET theo ID chứa metadata chỉnh sửa mới nhất, không kèm field history
+ * - TC-RRES-03: Danh sách theo post/seller gộp (batch) metadata history cho mọi review
+ */
+
 import { AuthorizationService } from "../../src/modules/authorization/authorization.service";
 import { CaslAbilityFactory } from "../../src/modules/authorization/casl-ability.factory";
 import { ReviewsService } from "../../src/modules/reviews/reviews.service";
@@ -94,7 +103,9 @@ const history = {
   editedAt: new Date("2026-10-05T00:00:00Z"),
 };
 
-test("POST review response includes default edit metadata", async () => {
+// [WORD-TC: TC-RRES-01]
+// Chức năng: Response tạo review chứa metadata chỉnh sửa mặc định
+test("[TC-RRES-01] Response tạo review chứa metadata chỉnh sửa mặc định", async () => {
   const { service } = serviceWith([]);
   const context = serviceWith([]).authorization.createAuthenticatedContext({
     id: BUYER,
@@ -113,7 +124,9 @@ test("POST review response includes default edit metadata", async () => {
   expect(result).not.toHaveProperty("newRating");
 });
 
-test("GET by ID includes latest edit metadata without history fields", async () => {
+// [WORD-TC: TC-RRES-02]
+// Chức năng: GET theo ID chứa metadata chỉnh sửa mới nhất, không kèm field history
+test("[TC-RRES-02] GET theo ID chứa metadata chỉnh sửa mới nhất, không kèm field history", async () => {
   const { service } = serviceWith([review()], [history]);
   const result = await service.findOne(
     REVIEW,
@@ -127,7 +140,9 @@ test("GET by ID includes latest edit metadata without history fields", async () 
   expect(result).not.toHaveProperty("oldRating");
 });
 
-test("post and seller lists batch history metadata for all reviews", async () => {
+// [WORD-TC: TC-RRES-03]
+// Chức năng: Danh sách theo post/seller gộp (batch) metadata history cho mọi review
+test("[TC-RRES-03] Danh sách theo post/seller gộp (batch) metadata history cho mọi review", async () => {
   const reviews = [review(), review(REVIEW_2)];
   const { service, historyFind, authorization } = serviceWith(reviews, [
     history,

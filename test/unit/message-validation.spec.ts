@@ -1,3 +1,23 @@
+/**
+ * MODULE: CONVERSATIONS & MESSAGES
+ *
+ * WORD TEST CASES:
+ * - TC-MVAL-01: thiếu cả hai → 400
+ * - TC-MVAL-02: cả hai → 400
+ * - TC-MVAL-03: null / rỗng / sai UUID → 400
+ * - TC-MVAL-04: đúng một UUID hợp lệ + clientId → pass
+ * - TC-MVAL-05: E1 thiếu clientId → 400; clientId rỗng sau trim → 400
+ * - TC-MVAL-06: quá 2000 ký tự sau trim → 400
+ * - TC-MVAL-07: null / sai kiểu → 400; whitespace được chuẩn hóa ở service
+ * - TC-MVAL-08: quá 5 ảnh trước dedup → 400
+ * - TC-MVAL-09: body content-only đi qua DTO riêng
+ * - TC-MVAL-10: body gửi postId/conversationId → 400 (forbidNonWhitelisted)
+ * - TC-MVAL-11: alias clientId optional; null không hợp lệ
+ * - TC-MVAL-12: Chấp nhận: decimal bigint deltas without converting to a JS number
+ * - TC-MVAL-13: limit ngoài 1–100 → 400; before sai UUID/null → 400
+ * - TC-MVAL-14: throughMessageId bắt buộc và UUID
+ */
+
 import "reflect-metadata";
 import { ValidationPipe } from "@nestjs/common";
 import { plainToInstance } from "class-transformer";
@@ -17,14 +37,18 @@ function toSendMessage(raw: Record<string, unknown>): SendMessageDto {
 }
 
 describe("SendMessageDto XOR target (U1)", () => {
-  it("thiếu cả hai → 400", async () => {
+  // [WORD-TC: TC-MVAL-01]
+  // Chức năng: thiếu cả hai → 400
+  it("[TC-MVAL-01] thiếu cả hai → 400", async () => {
     const errors = await validate(
       toSendMessage({ content: "hi", clientId: "c1" }),
     );
     expect(errors.length).toBeGreaterThan(0);
   });
 
-  it("cả hai → 400", async () => {
+  // [WORD-TC: TC-MVAL-02]
+  // Chức năng: cả hai → 400
+  it("[TC-MVAL-02] cả hai → 400", async () => {
     const errors = await validate(
       toSendMessage({
         postId: POST_ID,
@@ -36,7 +60,9 @@ describe("SendMessageDto XOR target (U1)", () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 
-  it("null / rỗng / sai UUID → 400", async () => {
+  // [WORD-TC: TC-MVAL-03]
+  // Chức năng: null / rỗng / sai UUID → 400
+  it("[TC-MVAL-03] null / rỗng / sai UUID → 400", async () => {
     for (const raw of [
       { postId: null, content: "hi", clientId: "c1" },
       { postId: "", content: "hi", clientId: "c1" },
@@ -49,7 +75,9 @@ describe("SendMessageDto XOR target (U1)", () => {
     }
   });
 
-  it("đúng một UUID hợp lệ + clientId → pass", async () => {
+  // [WORD-TC: TC-MVAL-04]
+  // Chức năng: đúng một UUID hợp lệ + clientId → pass
+  it("[TC-MVAL-04] đúng một UUID hợp lệ + clientId → pass", async () => {
     for (const raw of [
       { postId: POST_ID, content: "hi", clientId: "c1" },
       { conversationId: CONV_ID, images: ["k"], clientId: "c1" },
@@ -59,7 +87,9 @@ describe("SendMessageDto XOR target (U1)", () => {
     }
   });
 
-  it("E1 thiếu clientId → 400; clientId rỗng sau trim → 400", async () => {
+  // [WORD-TC: TC-MVAL-05]
+  // Chức năng: E1 thiếu clientId → 400; clientId rỗng sau trim → 400
+  it("[TC-MVAL-05] E1 thiếu clientId → 400; clientId rỗng sau trim → 400", async () => {
     for (const raw of [
       { postId: POST_ID, content: "hi" },
       { postId: POST_ID, content: "hi", clientId: "   " },
@@ -72,7 +102,9 @@ describe("SendMessageDto XOR target (U1)", () => {
 });
 
 describe("SendMessageDto content/images (U2)", () => {
-  it("quá 2000 ký tự sau trim → 400", async () => {
+  // [WORD-TC: TC-MVAL-06]
+  // Chức năng: quá 2000 ký tự sau trim → 400
+  it("[TC-MVAL-06] quá 2000 ký tự sau trim → 400", async () => {
     const errors = await validate(
       toSendMessage({
         postId: POST_ID,
@@ -83,7 +115,9 @@ describe("SendMessageDto content/images (U2)", () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 
-  it("null / sai kiểu → 400; whitespace được chuẩn hóa ở service", async () => {
+  // [WORD-TC: TC-MVAL-07]
+  // Chức năng: null / sai kiểu → 400; whitespace được chuẩn hóa ở service
+  it("[TC-MVAL-07] null / sai kiểu → 400; whitespace được chuẩn hóa ở service", async () => {
     for (const raw of [
       { postId: POST_ID, content: null, clientId: "c1" },
       { postId: POST_ID, content: 123, clientId: "c1" },
@@ -95,7 +129,9 @@ describe("SendMessageDto content/images (U2)", () => {
     }
   });
 
-  it("quá 5 ảnh trước dedup → 400", async () => {
+  // [WORD-TC: TC-MVAL-08]
+  // Chức năng: quá 5 ảnh trước dedup → 400
+  it("[TC-MVAL-08] quá 5 ảnh trước dedup → 400", async () => {
     const errors = await validate(
       toSendMessage({
         postId: POST_ID,
@@ -114,7 +150,9 @@ describe("SendConversationMessageDto alias (U1)", () => {
     transform: true,
   });
 
-  it("body content-only đi qua DTO riêng", async () => {
+  // [WORD-TC: TC-MVAL-09]
+  // Chức năng: body content-only đi qua DTO riêng
+  it("[TC-MVAL-09] body content-only đi qua DTO riêng", async () => {
     const out = await pipe.transform(
       { content: "hello" },
       { type: "body", metatype: SendConversationMessageDto },
@@ -122,7 +160,9 @@ describe("SendConversationMessageDto alias (U1)", () => {
     expect((out as SendConversationMessageDto).content).toBe("hello");
   });
 
-  it("body gửi postId/conversationId → 400 (forbidNonWhitelisted)", async () => {
+  // [WORD-TC: TC-MVAL-10]
+  // Chức năng: body gửi postId/conversationId → 400 (forbidNonWhitelisted)
+  it("[TC-MVAL-10] body gửi postId/conversationId → 400 (forbidNonWhitelisted)", async () => {
     await expect(
       pipe.transform(
         { content: "hello", conversationId: CONV_ID },
@@ -137,7 +177,9 @@ describe("SendConversationMessageDto alias (U1)", () => {
     ).rejects.toThrow();
   });
 
-  it("alias clientId optional; null không hợp lệ", async () => {
+  // [WORD-TC: TC-MVAL-11]
+  // Chức năng: alias clientId optional; null không hợp lệ
+  it("[TC-MVAL-11] alias clientId optional; null không hợp lệ", async () => {
     const without = plainToInstance(SendConversationMessageDto, {
       content: "hi",
     });
@@ -151,7 +193,9 @@ describe("SendConversationMessageDto alias (U1)", () => {
 });
 
 describe("GetMessagesQueryDto / MarkReadDto", () => {
-  it("accepts decimal bigint deltas without converting to a JS number", async () => {
+  // [WORD-TC: TC-MVAL-12]
+  // Chức năng: Chấp nhận: decimal bigint deltas without converting to a JS number
+  it("[TC-MVAL-12] Chấp nhận: decimal bigint deltas without converting to a JS number", async () => {
     for (const afterSequence of [
       "0",
       "9007199254740993",
@@ -180,7 +224,9 @@ describe("GetMessagesQueryDto / MarkReadDto", () => {
       ).toBeGreaterThan(0);
     }
   });
-  it("limit ngoài 1–100 → 400; before sai UUID/null → 400", async () => {
+  // [WORD-TC: TC-MVAL-13]
+  // Chức năng: limit ngoài 1–100 → 400; before sai UUID/null → 400
+  it("[TC-MVAL-13] limit ngoài 1–100 → 400; before sai UUID/null → 400", async () => {
     const over = plainToInstance(GetMessagesQueryDto, { limit: 101 });
     expect((await validate(over)).length).toBeGreaterThan(0);
     const badCursor = plainToInstance(GetMessagesQueryDto, {
@@ -191,7 +237,9 @@ describe("GetMessagesQueryDto / MarkReadDto", () => {
     expect((await validate(nullCursor)).length).toBeGreaterThan(0);
   });
 
-  it("throughMessageId bắt buộc và UUID", async () => {
+  // [WORD-TC: TC-MVAL-14]
+  // Chức năng: throughMessageId bắt buộc và UUID
+  it("[TC-MVAL-14] throughMessageId bắt buộc và UUID", async () => {
     const missing = plainToInstance(MarkReadDto, {});
     expect((await validate(missing)).length).toBeGreaterThan(0);
     const bad = plainToInstance(MarkReadDto, { throughMessageId: "x" });

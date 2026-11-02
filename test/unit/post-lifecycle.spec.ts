@@ -1,3 +1,27 @@
+/**
+ * MODULE: POSTS (VÒNG ĐỜI TIN ĐĂNG)
+ *
+ * WORD TEST CASES:
+ * - TC-PLC-01: Tạo tin hạn 14 ngày và trả về số lượng tin miễn phí còn lại
+ * - TC-PLC-02: Từ chối tạo tin thứ 6 (vượt quota 5 tin miễn phí)
+ * - TC-PLC-03: applies Tấn's posting restriction to create
+ * - TC-PLC-04: applies Tấn's posting restriction to restore
+ * - TC-PLC-05: applies Tấn's posting restriction to renew
+ * - TC-PLC-06: Chấp nhận quota giảm do restriction; restriction không bị xử lý như khóa tài khoản
+ * - TC-PLC-07: Restore tin quá hạn → trạng thái expired, không tốn quota, không reset lượt gia hạn miễn phí
+ * - TC-PLC-08: Restore tin còn hiển thị thì không đổi thời hạn hết hạn
+ * - TC-PLC-09: Kiểm tra: quota when restoring a live listing
+ * - TC-PLC-10: Gia hạn miễn phí đúng một lần, ghi nhận deadline cũ
+ * - TC-PLC-11: Không thể gia hạn trước khi hết hạn, kể cả gọi trùng lặp ngay lập tức
+ * - TC-PLC-12: Không thể: renew a sold listing
+ * - TC-PLC-13: Không thể: renew a hidden listing
+ * - TC-PLC-14: Không thể: renew another seller's listing
+ * - TC-PLC-15: Kiểm tra quota cho cả gia hạn trả phí và gia hạn miễn phí
+ * - TC-PLC-16: Không gia hạn lần hai cho thanh toán trùng lặp, kể cả khi tin hết hạn lần nữa
+ * - TC-PLC-17: Từ chối payment dùng cho tin khác và gia hạn trả phí chạy ngoài transaction
+ * - TC-PLC-18: Từ chối transaction payment có thể đếm snapshot quota cũ (repeatable-read)
+ */
+
 import "reflect-metadata";
 import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { DataSource, EntityManager } from "typeorm";
@@ -120,7 +144,9 @@ function setup(overrides: Partial<PostEntity> = {}) {
 }
 
 describe("post lifecycle", () => {
-  it("creates a 14-day listing and reports remaining quota", async () => {
+  // [WORD-TC: TC-PLC-01]
+  // Chức năng: Tạo tin hạn 14 ngày và trả về số lượng tin miễn phí còn lại
+  it("[TC-PLC-01] Tạo tin hạn 14 ngày và trả về số lượng tin miễn phí còn lại", async () => {
     const { service, posts } = setup();
     posts.countBy.mockResolvedValue(4);
     expect(await service.quota(context)).toMatchObject({
@@ -140,7 +166,9 @@ describe("post lifecycle", () => {
     });
   });
 
-  it("rejects a sixth listing", async () => {
+  // [WORD-TC: TC-PLC-02]
+  // Chức năng: Từ chối tạo tin thứ 6 (vượt quota 5 tin miễn phí)
+  it("[TC-PLC-02] Từ chối tạo tin thứ 6 (vượt quota 5 tin miễn phí)", async () => {
     const { service, posts } = setup();
     posts.countBy.mockResolvedValue(5);
     await expect(service.create(dto, context)).rejects.toBeInstanceOf(
@@ -153,8 +181,14 @@ describe("post lifecycle", () => {
     });
   });
 
+  // [WORD-TC: TC-PLC-03]
+  // Chức năng: applies Tấn's posting restriction to create
+  // [WORD-TC: TC-PLC-04]
+  // Chức năng: applies Tấn's posting restriction to restore
+  // [WORD-TC: TC-PLC-05]
+  // Chức năng: applies Tấn's posting restriction to renew
   it.each(["create", "restore", "renew"])(
-    "applies Tấn's posting restriction to %s",
+    "[TC-PLC] Áp dụng hạn chế đăng tin khi thực hiện %s",
     async (operation) => {
       const state = setup({
         deletedAt: operation === "restore" ? NOW : null,
@@ -181,7 +215,9 @@ describe("post lifecycle", () => {
     },
   );
 
-  it("accepts reduced quota without treating posting restrictions as account locks", async () => {
+  // [WORD-TC: TC-PLC-06]
+  // Chức năng: Chấp nhận quota giảm do restriction; restriction không bị xử lý như khóa tài khoản
+  it("[TC-PLC-06] Chấp nhận quota giảm do restriction; restriction không bị xử lý như khóa tài khoản", async () => {
     const state = setup();
     state.decision.limit = 2;
     state.posts.countBy.mockResolvedValue(2);
@@ -191,7 +227,9 @@ describe("post lifecycle", () => {
     expect(state.seller.isLocked).toBe(false);
   });
 
-  it("restores an overdue listing as expired without consuming quota or resetting its free renewal", async () => {
+  // [WORD-TC: TC-PLC-07]
+  // Chức năng: Restore tin quá hạn → trạng thái expired, không tốn quota, không reset lượt gia hạn miễn phí
+  it("[TC-PLC-07] Restore tin quá hạn → trạng thái expired, không tốn quota, không reset lượt gia hạn miễn phí", async () => {
     const state = setup({ deletedAt: NOW });
     const oldExpiry = state.post.expiresAt;
     state.decision.allowed = false;
@@ -206,7 +244,9 @@ describe("post lifecycle", () => {
     expect(state.restrictions.evaluate).not.toHaveBeenCalled();
   });
 
-  it("does not reset expiry when restoring a listing that is still live", async () => {
+  // [WORD-TC: TC-PLC-08]
+  // Chức năng: Restore tin còn hiển thị thì không đổi thời hạn hết hạn
+  it("[TC-PLC-08] Restore tin còn hiển thị thì không đổi thời hạn hết hạn", async () => {
     const expiresAt = new Date(NOW.getTime() + DAY_MS);
     const state = setup({ deletedAt: NOW, expiresAt, renewalCount: 1 });
     expect(await state.service.restore(POST, context)).toMatchObject({
@@ -216,7 +256,9 @@ describe("post lifecycle", () => {
     });
   });
 
-  it("checks quota when restoring a live listing", async () => {
+  // [WORD-TC: TC-PLC-09]
+  // Chức năng: Kiểm tra: quota when restoring a live listing
+  it("[TC-PLC-09] Kiểm tra: quota when restoring a live listing", async () => {
     const state = setup({
       deletedAt: NOW,
       expiresAt: new Date(NOW.getTime() + DAY_MS),
@@ -228,7 +270,9 @@ describe("post lifecycle", () => {
     expect(state.posts.save).not.toHaveBeenCalled();
   });
 
-  it("renews an expired listing for free exactly once, recording the old deadline", async () => {
+  // [WORD-TC: TC-PLC-10]
+  // Chức năng: Gia hạn miễn phí đúng một lần, ghi nhận deadline cũ
+  it("[TC-PLC-10] Gia hạn miễn phí đúng một lần, ghi nhận deadline cũ", async () => {
     const state = setup();
     const previousExpiresAt = state.post.expiresAt;
     const result = await state.service.renewFree(POST, context);
@@ -253,7 +297,9 @@ describe("post lifecycle", () => {
     expect(state.history.save).toHaveBeenCalledTimes(1);
   });
 
-  it("cannot renew before expiry, including an immediate duplicate free request", async () => {
+  // [WORD-TC: TC-PLC-11]
+  // Chức năng: Không thể gia hạn trước khi hết hạn, kể cả gọi trùng lặp ngay lập tức
+  it("[TC-PLC-11] Không thể gia hạn trước khi hết hạn, kể cả gọi trùng lặp ngay lập tức", async () => {
     const state = setup({ expiresAt: new Date(NOW.getTime() + DAY_MS) });
     await expect(state.service.renewFree(POST, context)).rejects.toMatchObject({
       response: { code: "POST_NOT_EXPIRED" },
@@ -261,8 +307,12 @@ describe("post lifecycle", () => {
     expect(state.posts.save).not.toHaveBeenCalled();
   });
 
+  // [WORD-TC: TC-PLC-12]
+  // Chức năng: Không thể: renew a sold listing
+  // [WORD-TC: TC-PLC-13]
+  // Chức năng: Không thể: renew a hidden listing
   it.each([PostStatus.SOLD, PostStatus.HIDDEN])(
-    "cannot renew a %s listing",
+    "[TC-PLC] Không thể gia hạn tin đăng ở trạng thái %s",
     async (status) => {
       const state = setup({ status });
       await expect(
@@ -271,7 +321,9 @@ describe("post lifecycle", () => {
     },
   );
 
-  it("cannot renew another seller's listing", async () => {
+  // [WORD-TC: TC-PLC-14]
+  // Chức năng: Không thể: renew another seller's listing
+  it("[TC-PLC-14] Không thể: renew another seller's listing", async () => {
     const state = setup({ sellerId: CATEGORY });
     await expect(state.service.renewFree(POST, context)).rejects.toBeInstanceOf(
       ForbiddenException,
@@ -279,7 +331,9 @@ describe("post lifecycle", () => {
     expect(state.posts.save).not.toHaveBeenCalled();
   });
 
-  it("checks quota for paid renewal as well as free renewal", async () => {
+  // [WORD-TC: TC-PLC-15]
+  // Chức năng: Kiểm tra quota cho cả gia hạn trả phí và gia hạn miễn phí
+  it("[TC-PLC-15] Kiểm tra quota cho cả gia hạn trả phí và gia hạn miễn phí", async () => {
     const state = setup({ renewalCount: 1 });
     state.posts.countBy.mockResolvedValue(5);
     await expect(
@@ -292,7 +346,9 @@ describe("post lifecycle", () => {
     ).rejects.toMatchObject({ response: { code: "POST_QUOTA_EXCEEDED" } });
   });
 
-  it("does not renew a second time for a duplicate payment, even after the next expiry", async () => {
+  // [WORD-TC: TC-PLC-16]
+  // Chức năng: Không gia hạn lần hai cho thanh toán trùng lặp, kể cả khi tin hết hạn lần nữa
+  it("[TC-PLC-16] Không gia hạn lần hai cho thanh toán trùng lặp, kể cả khi tin hết hạn lần nữa", async () => {
     const state = setup({ renewalCount: 2 });
     const before = state.post.expiresAt;
     state.history.findOneBy.mockResolvedValue(
@@ -313,7 +369,9 @@ describe("post lifecycle", () => {
     expect(state.posts.save).not.toHaveBeenCalled();
   });
 
-  it("rejects a payment used on a different listing and paid renewal outside a transaction", async () => {
+  // [WORD-TC: TC-PLC-17]
+  // Chức năng: Từ chối payment dùng cho tin khác và gia hạn trả phí chạy ngoài transaction
+  it("[TC-PLC-17] Từ chối payment dùng cho tin khác và gia hạn trả phí chạy ngoài transaction", async () => {
     const state = setup({ renewalCount: 1 });
     state.history.findOneBy.mockResolvedValue(
       Object.assign(new PostRenewalEntity(), { postId: CATEGORY }),
@@ -336,7 +394,9 @@ describe("post lifecycle", () => {
     ).rejects.toThrow("active transaction");
   });
 
-  it("rejects repeatable-read payment transactions that could count an old quota snapshot", async () => {
+  // [WORD-TC: TC-PLC-18]
+  // Chức năng: Từ chối transaction payment có thể đếm snapshot quota cũ (repeatable-read)
+  it("[TC-PLC-18] Từ chối transaction payment có thể đếm snapshot quota cũ (repeatable-read)", async () => {
     const state = setup({ renewalCount: 1 });
     jest
       .spyOn(state.manager, "query")

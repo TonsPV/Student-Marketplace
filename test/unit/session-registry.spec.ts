@@ -1,3 +1,15 @@
+/**
+ * MODULE: REALTIME (WEBSOCKET)
+ *
+ * WORD TEST CASES:
+ * - TC-SES-01: Đánh index phiên chờ trước khi tra cứu DB và chặn activate sau khi đã lock
+ * - TC-SES-02: Vô hiệu hóa mọi marker trước khi thử ngắt kết nối transport
+ * - TC-SES-03: Hết hạn socket nhàn rỗi và gỡ điều kiện đủ quyền trước khi ngắt kết nối
+ * - TC-SES-04: Timeout phiên tra cứu chờ và giải phóng index/timer
+ * - TC-SES-05: Chỉ emit tới người nhận còn active và chưa hết hạn trong room yêu cầu
+ * - TC-SES-06: Đóng transport → dọn index user và hủy timer
+ */
+
 import "reflect-metadata";
 import type { Socket } from "socket.io";
 import {
@@ -24,7 +36,9 @@ describe("WebSocket session lifecycle", () => {
     registry.clearAll();
     jest.useRealTimers();
   });
-  it("indexes pending sessions before DB lookup and prevents later activation after lock", () => {
+  // [WORD-TC: TC-SES-01]
+  // Chức năng: Đánh index phiên chờ trước khi tra cứu DB và chặn activate sau khi đã lock
+  it("[TC-SES-01] Đánh index phiên chờ trước khi tra cứu DB và chặn activate sau khi đã lock", () => {
     const client = socket("pending");
     const reject = jest.fn();
     registry.registerPending(
@@ -39,7 +53,9 @@ describe("WebSocket session lifecycle", () => {
     expect(registry.activate(client.id)).toBeNull();
     expect(registry.isEligible(client.id)).toBe(false);
   });
-  it("invalidates all markers before attempting any transport disconnect", () => {
+  // [WORD-TC: TC-SES-02]
+  // Chức năng: Vô hiệu hóa mọi marker trước khi thử ngắt kết nối transport
+  it("[TC-SES-02] Vô hiệu hóa mọi marker trước khi thử ngắt kết nối transport", () => {
     const a = socket("a"),
       b = socket("b");
     registry.registerPending(a, USER, Date.now() + 60000);
@@ -52,7 +68,9 @@ describe("WebSocket session lifecycle", () => {
     registry.invalidateUser(USER);
     expect(b.disconnect).toHaveBeenCalledTimes(1);
   });
-  it("expires idle sockets and removes eligibility before disconnect", () => {
+  // [WORD-TC: TC-SES-03]
+  // Chức năng: Hết hạn socket nhàn rỗi và gỡ điều kiện đủ quyền trước khi ngắt kết nối
+  it("[TC-SES-03] Hết hạn socket nhàn rỗi và gỡ điều kiện đủ quyền trước khi ngắt kết nối", () => {
     const client = socket("a");
     registry.registerPending(client, USER, Date.now() + 2000);
     registry.activate(client.id);
@@ -63,7 +81,9 @@ describe("WebSocket session lifecycle", () => {
     expect(client.disconnect).toHaveBeenCalledTimes(1);
     expect(registry.get(client.id)?.status).toBe("invalidated");
   });
-  it("times out pending lookup and releases indexes/timer", () => {
+  // [WORD-TC: TC-SES-04]
+  // Chức năng: Timeout phiên tra cứu chờ và giải phóng index/timer
+  it("[TC-SES-04] Timeout phiên tra cứu chờ và giải phóng index/timer", () => {
     const client = socket("slow"),
       reject = jest.fn();
     registry.registerPending(client, USER, Date.now() + 60000, reject);
@@ -73,7 +93,9 @@ describe("WebSocket session lifecycle", () => {
     expect(registry.activate(client.id)).toBeNull();
     expect(jest.getTimerCount()).toBe(0);
   });
-  it("emits only to active unexpired recipients in the requested room", () => {
+  // [WORD-TC: TC-SES-05]
+  // Chức năng: Chỉ emit tới người nhận còn active và chưa hết hạn trong room yêu cầu
+  it("[TC-SES-05] Chỉ emit tới người nhận còn active và chưa hết hạn trong room yêu cầu", () => {
     const a = socket("active", new Set(["conversation:c"])),
       p = socket("pending", new Set(["conversation:c"])),
       x = socket("invalid", new Set(["conversation:c"]));
@@ -95,7 +117,9 @@ describe("WebSocket session lifecycle", () => {
     realtime.emitToUser(USER, "event", {});
     expect(emit).toHaveBeenCalledTimes(1);
   });
-  it("transport close cleanup removes user index and cancels timers", () => {
+  // [WORD-TC: TC-SES-06]
+  // Chức năng: Đóng transport → dọn index user và hủy timer
+  it("[TC-SES-06] Đóng transport → dọn index user và hủy timer", () => {
     const client = socket("a");
     registry.registerPending(client, USER, Date.now() + 60000);
     registry.activate(client.id);

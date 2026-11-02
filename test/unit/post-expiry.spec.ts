@@ -1,3 +1,13 @@
+/**
+ * MODULE: POSTS (VÒNG ĐỜI TIN ĐĂNG)
+ *
+ * WORD TEST CASES:
+ * - TC-PEX-01: Hết hạn tin quá hạn, tạo notification với cycle key riêng, chỉ emit sau commit
+ * - TC-PEX-02: Không emit duplicates ignored by the database
+ * - TC-PEX-03: Không emit any events when the transaction fails
+ * - TC-PEX-04: Gửi: expiry instead of a stale warning when the deadline passes while processing
+ */
+
 import "reflect-metadata";
 import { DataSource } from "typeorm";
 import { PostExpiryService } from "../../src/modules/posts/post-expiry.service";
@@ -71,7 +81,9 @@ function setup() {
 }
 
 describe("post expiry worker", () => {
-  it("expires overdue posts and creates notifications with separate cycle keys, emitting only after commit", async () => {
+  // [WORD-TC: TC-PEX-01]
+  // Chức năng: Hết hạn tin quá hạn, tạo notification với cycle key riêng, chỉ emit sau commit
+  it("[TC-PEX-01] Hết hạn tin quá hạn, tạo notification với cycle key riêng, chỉ emit sau commit", async () => {
     const state = setup();
     expect(await state.service.processBatch()).toEqual({
       processed: 2,
@@ -98,14 +110,18 @@ describe("post expiry worker", () => {
     expect(state.notifications.emitCreated).toHaveBeenCalledTimes(2);
   });
 
-  it("does not emit duplicates ignored by the database", async () => {
+  // [WORD-TC: TC-PEX-02]
+  // Chức năng: Không emit duplicates ignored by the database
+  it("[TC-PEX-02] Không emit duplicates ignored by the database", async () => {
     const state = setup();
     state.notifications.createOnce.mockResolvedValue(null);
     expect((await state.service.processBatch()).notified).toBe(0);
     expect(state.notifications.emitCreated).not.toHaveBeenCalled();
   });
 
-  it("does not emit any events when the transaction fails", async () => {
+  // [WORD-TC: TC-PEX-03]
+  // Chức năng: Không emit any events when the transaction fails
+  it("[TC-PEX-03] Không emit any events when the transaction fails", async () => {
     const state = setup();
     state.notifications.createOnce.mockRejectedValueOnce(
       new Error("database failure"),
@@ -116,7 +132,9 @@ describe("post expiry worker", () => {
     expect(state.notifications.emitCreated).not.toHaveBeenCalled();
   });
 
-  it("sends expiry instead of a stale warning when the deadline passes while processing", async () => {
+  // [WORD-TC: TC-PEX-04]
+  // Chức năng: Gửi: expiry instead of a stale warning when the deadline passes while processing
+  it("[TC-PEX-04] Gửi: expiry instead of a stale warning when the deadline passes while processing", async () => {
     const state = setup();
     state.posts.splice(1, 1);
     expect((await state.service.processBatch()).notified).toBe(1);

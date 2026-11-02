@@ -1,3 +1,15 @@
+/**
+ * MODULE: MODERATION & POSTING RESTRICTIONS
+ *
+ * WORD TEST CASES:
+ * - TC-PPR-01: Tạo tin với READ COMMITTED, khóa user trước, kiểm tra restriction tại thời điểm khóa post rồi mới ghi
+ * - TC-PPR-02: User bị hạn chế nhận lỗi POSTING_RESTRICTED và không có dữ liệu nào được ghi
+ * - TC-PPR-03: Admin cũng không được miễn trừ posting restriction
+ * - TC-PPR-04: Restore với READ COMMITTED, thứ tự khóa User → Post, kiểm tra restriction tại thời điểm khóa post
+ * - TC-PPR-05: Restore của user bị hạn chế bị từ chối sau khi cả hai khóa được giữ, không restore gì
+ * - TC-PPR-06: Restore không thay đổi gì và thao tác của người ngoài không giữ khóa nào
+ */
+
 jest.mock("../../src/modules/moderation/reputation-posting-policy", () => ({
   sellerPostingReputation: jest
     .fn()
@@ -168,7 +180,9 @@ function setup(options: {
 const checkedAtLock = `check:${SELLER}@${LOCKED_AT.toISOString()}`;
 
 describe("PostsService posting restriction enforcement", () => {
-  it("create: READ COMMITTED, user lock first, check at post-lock instant, then write", async () => {
+  // [WORD-TC: TC-PPR-01]
+  // Chức năng: Tạo tin với READ COMMITTED, khóa user trước, kiểm tra restriction tại thời điểm khóa post rồi mới ghi
+  it("[TC-PPR-01] Tạo tin với READ COMMITTED, khóa user trước, kiểm tra restriction tại thời điểm khóa post rồi mới ghi", async () => {
     const { service, context, calls } = setup({ restricted: false });
     await service.create(body, context);
     expect(POSTING_ISOLATION).toBe("READ COMMITTED");
@@ -181,7 +195,9 @@ describe("PostsService posting restriction enforcement", () => {
     ]);
   });
 
-  it("restricted user gets POSTING_RESTRICTED and nothing is written", async () => {
+  // [WORD-TC: TC-PPR-02]
+  // Chức năng: User bị hạn chế nhận lỗi POSTING_RESTRICTED và không có dữ liệu nào được ghi
+  it("[TC-PPR-02] User bị hạn chế nhận lỗi POSTING_RESTRICTED và không có dữ liệu nào được ghi", async () => {
     const { service, repo, categories, context } = setup({ restricted: true });
     const error = await service.create(body, context).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ForbiddenException);
@@ -193,7 +209,9 @@ describe("PostsService posting restriction enforcement", () => {
     expect(categories.findOneBy).not.toHaveBeenCalled();
   });
 
-  it("admins are not exempt from posting restrictions", async () => {
+  // [WORD-TC: TC-PPR-03]
+  // Chức năng: Admin cũng không được miễn trừ posting restriction
+  it("[TC-PPR-03] Admin cũng không được miễn trừ posting restriction", async () => {
     const { service, repo, context } = setup({
       restricted: true,
       isAdmin: true,
@@ -204,7 +222,9 @@ describe("PostsService posting restriction enforcement", () => {
     expect(repo.save).not.toHaveBeenCalled();
   });
 
-  it("restore: READ COMMITTED, lock order User → Post, check at post-lock instant", async () => {
+  // [WORD-TC: TC-PPR-04]
+  // Chức năng: Restore với READ COMMITTED, thứ tự khóa User → Post, kiểm tra restriction tại thời điểm khóa post
+  it("[TC-PPR-04] Restore với READ COMMITTED, thứ tự khóa User → Post, kiểm tra restriction tại thời điểm khóa post", async () => {
     const { service, context, calls } = setup({ restricted: false });
     await service.restore(POST, context);
     expect(calls).toEqual([
@@ -216,7 +236,9 @@ describe("PostsService posting restriction enforcement", () => {
     ]);
   });
 
-  it("restricted restore is rejected after both locks and nothing is restored", async () => {
+  // [WORD-TC: TC-PPR-05]
+  // Chức năng: Restore của user bị hạn chế bị từ chối sau khi cả hai khóa được giữ, không restore gì
+  it("[TC-PPR-05] Restore của user bị hạn chế bị từ chối sau khi cả hai khóa được giữ, không restore gì", async () => {
     const { service, repo, context, calls } = setup({ restricted: true });
     await expect(service.restore(POST, context)).rejects.toThrow(
       ForbiddenException,
@@ -231,7 +253,9 @@ describe("PostsService posting restriction enforcement", () => {
     expect(repo.save).not.toHaveBeenCalled();
   });
 
-  it("no-op restore and outsiders take no lock at all", async () => {
+  // [WORD-TC: TC-PPR-06]
+  // Chức năng: Restore không thay đổi gì và thao tác của người ngoài không giữ khóa nào
+  it("[TC-PPR-06] Restore không thay đổi gì và thao tác của người ngoài không giữ khóa nào", async () => {
     const live = setup({ restricted: true });
     live.repo.findOne.mockResolvedValueOnce({
       ...live.post,
