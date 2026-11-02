@@ -28,6 +28,13 @@ export class SearchPostsDto {
   @ApiPropertyOptional({ enum: PostSort, default: PostSort.RECOMMENDED })
   @IsOptional()
   @IsEnum(PostSort)
+  @Transform(({ value }: { value: unknown }) =>
+    value === "newest"
+      ? PostSort.NEWEST
+      : value === "priority"
+        ? PostSort.RECOMMENDED
+        : value,
+  )
   sort?: PostSort = PostSort.RECOMMENDED;
   @ApiPropertyOptional({ type: String, format: "uuid" })
   @IsOptional()
@@ -42,7 +49,7 @@ export class SearchPostsDto {
     type: String,
     example: "iphone",
     description:
-      "All whitespace-separated keywords must appear in the title or description, in any order, ignoring case and Vietnamese accents. Typo matching is not supported.",
+      "All whitespace-separated keywords must appear in the title, in any order, ignoring case and Vietnamese accents. Typo matching is not supported.",
   })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) =>

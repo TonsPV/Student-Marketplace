@@ -1,3 +1,7 @@
+import { PaginationDto } from "../../common/dto/pagination.dto";
+import { PostLifecycleService } from "./post-lifecycle.service";
+import { PostActivationPolicyService } from "./post-activation-policy.service";
+import { ModerationPostingPolicy } from "./moderation-posting-policy";
 import { Promotion } from "../promotions/promotion.entity";
 import {
   BadRequestException,
@@ -54,7 +58,6 @@ import {
   POSTING_ISOLATION,
 } from "../moderation/moderation.service";
 import { PostSort } from "./dto/post-sort";
-import { postExpiresAt } from "../../config/post-expiration.config";
 import {
   LISTING_EXPIRY_PREDICATE,
   activePromotionExpression,
@@ -75,7 +78,10 @@ export class PostsService {
     private readonly authorization: AuthorizationService,
     private readonly dataSource: DataSource,
     private readonly storage: StorageService,
-    private readonly moderation: ModerationService,
+    private readonly moderation: ModerationService = new ModerationService(
+      dataSource,
+      authorization,
+    ),
     @InjectRepository(ConversationEntity)
     @Optional()
     private readonly conversationsRepository?: Repository<ConversationEntity>,
@@ -90,7 +96,7 @@ export class PostsService {
     private readonly lifecycle: PostLifecycleService = new PostLifecycleService(
       dataSource,
       authorization,
-      new PostActivationPolicyService(),
+      new PostActivationPolicyService(new ModerationPostingPolicy(moderation)),
     ),
   ) {}
 
@@ -125,26 +131,25 @@ export class PostsService {
     if (Object.keys(input).some((field) => !fields.has(field))) {
       throw new BadRequestException("Unknown post field");
     }
-    // Posting restriction (not account lock): blocks only new posts.
-    await this.moderation.lockAndAssertCanPost(manager, context.principal.id);
-    await this.ensureCategoryExists(dto.categoryId, manager);
-
-    const repo = manager.getRepository(PostEntity);
-    const post = repo.create({
-      categoryId: dto.categoryId,
-      title: dto.title,
-      description: dto.description,
-      price: dto.price,
-      condition: dto.condition,
-      location: this.toStoredLocation(dto.location),
-      locationName: dto.locationName ?? null,
-      sellerId: context.principal.id,
-      // Phase 4 Step 2: every new listing gets a lifetime from the
-      // centralized POST_EXPIRATION_DAYS config (proposed default 30 days).
-      expiresAt: postExpiresAt(new Date()),
-    });
-
-    return this.toResponse(await repo.save(post));
+    return this.toResponse(
+      await this.lifecycle.createWithManager(manager, dto, context),
+    );
+  }
+  quota(context: AuthenticatedContext) {
+    return this.lifecycle.quota(context);
+  }
+  async renew(id: string, context: AuthenticatedContext) {
+    return this.toResponse(await this.lifecycle.renewFree(id, context));
+  }
+  renewalHistory(
+    id: string,
+    context: AuthenticatedContext,
+    query: PaginationDto,
+  ) {
+    return this.lifecycle.renewalHistory(id, context, query);
+  }
+  async findMyPost(id: string, context: AuthenticatedContext) {
+    return this.toResponse(await this.getOwnedPost(id, context));
   }
 
   /**
@@ -154,8 +159,7 @@ export class PostsService {
    * findAndCount branch removed in Step 2 was unreachable dead code (the
    * DTO defaults `sort` to RECOMMENDED) and returned sellers without
    * reputation fields; every response now carries the unified ranking.
-   * Eligibility: ACTIVE, not soft-deleted, and `expires_at IS NULL OR
-   * expires_at > now` (now bound once per request as :listingNow).
+   * Eligibility: ACTIVE, not soft-deleted, and not expired by the DB clock.
    */
   async findAll(query: FindPostsDto, context: AuthorizationContext) {
     this.authorization.assertRoute(context, "read", "Post");
@@ -163,7 +167,8 @@ export class PostsService {
     const builder = this.listingQueryBuilder()
       .where("post.status = :status", { status: PostStatus.ACTIVE })
       .andWhere("post.deleted_at IS NULL")
-      .andWhere(LISTING_EXPIRY_PREDICATE, { listingNow: new Date() });
+      .andWhere("seller.isLocked = false AND seller.deletedAt IS NULL")
+      .andWhere(LISTING_EXPIRY_PREDICATE);
     if (categoryId)
       builder.andWhere("post.category_id = :categoryId", { categoryId });
     this.applyReputationFilter(builder, query.reputationLevel);
@@ -263,7 +268,8 @@ export class PostsService {
       .addSelect(["category.id", "category.name"])
       .where("post.status = :status", { status: PostStatus.ACTIVE })
       .andWhere("post.deleted_at IS NULL")
-      .andWhere(LISTING_EXPIRY_PREDICATE, { listingNow: new Date() });
+      .andWhere("seller.isLocked = false AND seller.deletedAt IS NULL")
+      .andWhere(LISTING_EXPIRY_PREDICATE);
     this.joinListingReputation(queryBuilder);
     this.applyReputationFilter(queryBuilder, query.reputationLevel);
 
@@ -325,11 +331,11 @@ export class PostsService {
       (this.dataSource.options as { schema?: string }).schema ?? "public";
     if (!/^[a-z][a-z0-9_]*$/.test(schema)) throw new Error("Invalid schema");
     queryBuilder.addSelect(
-      `(SELECT MAX(pr."endsAt") FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP)`,
+      `(SELECT MAX(pr."endsAt") FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP AND pr.cancelled_at IS NULL)`,
       "promoted_until",
     );
     queryBuilder.addSelect(
-      `CASE WHEN (SELECT COUNT(*) FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP)>0 THEN 1 ELSE 0 END`,
+      `CASE WHEN (SELECT COUNT(*) FROM "${schema}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP AND pr.cancelled_at IS NULL)>0 THEN 1 ELSE 0 END`,
       "promotion_priority",
     );
     const total = await queryBuilder.clone().getCount();
@@ -370,9 +376,14 @@ export class PostsService {
         {
           id,
           status: PostStatus.ACTIVE,
+          seller: { isLocked: false, deletedAt: IsNull() },
           expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
         },
-        { id, status: PostStatus.SOLD },
+        {
+          id,
+          status: PostStatus.SOLD,
+          seller: { isLocked: false, deletedAt: IsNull() },
+        },
       ],
       relations: {
         seller: true,
@@ -476,7 +487,7 @@ export class PostsService {
       .createQueryBuilder("pr")
       .where('pr."postId" IN (:...ids)', { ids: posts.map((p) => p.id) })
       .andWhere(
-        'pr."endsAt">CURRENT_TIMESTAMP AND pr."startsAt"<=CURRENT_TIMESTAMP',
+        'pr."endsAt">CURRENT_TIMESTAMP AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr.cancelled_at IS NULL',
       )
       .getMany();
     return posts.map((p) => {
@@ -540,6 +551,7 @@ export class PostsService {
       where: {
         id,
         status: PostStatus.ACTIVE,
+        seller: { isLocked: false, deletedAt: IsNull() },
         expiresAt: Raw((alias) => `${alias} > statement_timestamp()`),
       },
     });
@@ -893,53 +905,9 @@ export class PostsService {
     id: string,
     context: AuthenticatedContext,
   ) {
-    const repo = manager.getRepository(PostEntity);
-    const assertCanRestore = (post: PostEntity) =>
-      this.authorization.assertResource(
-        context,
-        "restore",
-        "Post",
-        toPostProjection({
-          id: post.id,
-          sellerId: post.sellerId,
-          status: post.status,
-          deletedAt: post.deletedAt,
-        }) as unknown as Record<string, unknown>,
-      );
-    const unlocked = await repo.findOne({ where: { id }, withDeleted: true });
-    if (!unlocked) throw new NotFoundException("Post not found");
-    // Reject outsiders before taking any lock on someone else's rows.
-    assertCanRestore(unlocked);
-    if (!unlocked.deletedAt) return this.toResponse(unlocked);
-
-    // Restoring puts a listing back on the marketplace: the seller's
-    // restriction applies, checked at the instant the user lock is granted.
-    const now = await this.moderation.lockPostingUser(
-      manager,
-      unlocked.sellerId,
+    return this.toResponse(
+      await this.lifecycle.restoreWithManager(manager, id, context),
     );
-    const post = await repo
-      .createQueryBuilder("post")
-      .withDeleted()
-      .setLock("pessimistic_write")
-      .where("post.id = :id", { id })
-      .getOne();
-    if (!post) throw new NotFoundException("Post not found");
-    if (post.sellerId !== unlocked.sellerId) {
-      throw new ConflictException("Post owner changed");
-    }
-    assertCanRestore(post);
-    if (!post.deletedAt) return this.toResponse(post);
-    await this.moderation.assertCanPost(manager, post.sellerId, now);
-    // Proposed policy (Phase 4 Step 2, needs confirmation): re-publishing a
-    // listing whose lifetime is null (legacy) or already over grants it a
-    // fresh window from POST_EXPIRATION_DAYS; unexpired lifetimes are kept.
-    if (!post.expiresAt || post.expiresAt.getTime() <= now.getTime()) {
-      post.expiresAt = postExpiresAt(now);
-      await repo.update(id, { expiresAt: post.expiresAt });
-    }
-    await repo.restore(id);
-    return this.toResponse(await repo.findOneByOrFail({ id }));
   }
 
   async getOwnedPost(
@@ -1043,15 +1011,17 @@ export class PostsService {
       ])
       .leftJoin("post.category", "category")
       .addSelect(["category.id", "category.name"]);
+    builder.addSelect(
+      `(SELECT MAX(pr."endsAt") FROM "${this.listingSchema()}".post_promotions pr WHERE pr."postId"=post.id AND pr."startsAt"<=CURRENT_TIMESTAMP AND pr."endsAt">CURRENT_TIMESTAMP AND pr.cancelled_at IS NULL)`,
+      "promotedUntil",
+    );
     this.joinListingReputation(builder);
     return builder;
   }
 
   /** Validated schema for schema-qualified subqueries (consistent with search). */
   private listingSchema(): string {
-    const options = this.dataSource.options as
-      | { schema?: string }
-      | undefined;
+    const options = this.dataSource.options as { schema?: string } | undefined;
     const schema = options?.schema ?? "public";
     if (!/^[a-z][a-z0-9_]*$/.test(schema))
       throw new Error("Invalid POSTGRES_SCHEMA");
@@ -1067,6 +1037,8 @@ export class PostsService {
       )
       .addSelect("reputation.review_count", "sellerReviewCount")
       .addSelect("reputation.rating_average", "sellerRatingAverage")
+      .addSelect("reputation.rating_average", "ranking_rating_average")
+      .addSelect("reputation.review_count", "ranking_review_count")
       .addSelect(reputationCaseExpression(), "sellerReputationLevel");
   }
 
@@ -1075,12 +1047,9 @@ export class PostsService {
     level?: ReputationLevel,
   ): void {
     if (level) {
-      builder.andWhere(
-        `${reputationCaseExpression()} = :reputationLevel`,
-        {
-          reputationLevel: level,
-        },
-      );
+      builder.andWhere(`${reputationCaseExpression()} = :reputationLevel`, {
+        reputationLevel: level,
+      });
     }
   }
 
@@ -1088,6 +1057,8 @@ export class PostsService {
     builder: SelectQueryBuilder<PostEntity>,
     sort: PostSort = PostSort.RECOMMENDED,
   ): SelectQueryBuilder<PostEntity> {
+    // Pagination wraps joined queries in DISTINCT; order only by selected aliases.
+    builder.addSelect(reputationPriorityExpression(), "reputation_priority");
     if (sort === PostSort.PRICE_ASC) {
       return builder.orderBy("post.price", "ASC").addOrderBy("post.id", "DESC");
     }
@@ -1096,7 +1067,7 @@ export class PostsService {
         .orderBy("post.price", "DESC")
         .addOrderBy("post.id", "DESC");
     }
-    if (sort === PostSort.NEWEST) {
+    if (sort === PostSort.NEWEST || (sort as string) === "newest") {
       return builder
         .orderBy("post.createdAt", "DESC")
         .addOrderBy("post.id", "DESC");
@@ -1105,9 +1076,9 @@ export class PostsService {
       // Pure reputation ordering by design: NO promotion boost here (Phase 4
       // Step 2 §C4) — this sort means "best reputation first", nothing else.
       return builder
-        .orderBy(reputationPriorityExpression(), "DESC")
-        .addOrderBy("reputation.rating_average", "DESC", "NULLS LAST")
-        .addOrderBy("reputation.review_count", "DESC", "NULLS LAST")
+        .orderBy("reputation_priority", "DESC")
+        .addOrderBy("ranking_rating_average", "DESC", "NULLS LAST")
+        .addOrderBy("ranking_review_count", "DESC", "NULLS LAST")
         .addOrderBy("post.createdAt", "DESC")
         .addOrderBy("post.id", "DESC");
     }
@@ -1116,16 +1087,16 @@ export class PostsService {
     // post can never outrank an EXCELLENT one), then rating/count/createdAt
     // and a stable id tie-breaker. The 0/1 boost is a select output column
     // (EXISTS, never a JOIN — no post duplication) and relies on the
-    // :listingNow parameter that every listing path binds exactly once.
+    // database statement clock shared with listing eligibility.
     builder.addSelect(
       activePromotionExpression(this.listingSchema()),
       "has_active_promotion",
     );
     return builder
-      .orderBy(reputationPriorityExpression(), "DESC")
+      .orderBy("reputation_priority", "DESC")
       .addOrderBy("has_active_promotion", "DESC")
-      .addOrderBy("reputation.rating_average", "DESC", "NULLS LAST")
-      .addOrderBy("reputation.review_count", "DESC", "NULLS LAST")
+      .addOrderBy("ranking_rating_average", "DESC", "NULLS LAST")
+      .addOrderBy("ranking_review_count", "DESC", "NULLS LAST")
       .addOrderBy("post.createdAt", "DESC")
       .addOrderBy("post.id", "DESC");
   }
@@ -1134,6 +1105,12 @@ export class PostsService {
     post: PostEntity,
     raw: Record<string, unknown>,
   ): PostEntity {
+    Object.assign(post, {
+      isPromoted: Boolean(raw.promotedUntil),
+      promotedUntil: raw.promotedUntil
+        ? new Date(raw.promotedUntil as string).toISOString()
+        : null,
+    });
     if (post.seller) {
       Object.assign(post.seller, {
         ratingAverage:

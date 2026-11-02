@@ -34,6 +34,7 @@ function serviceWith(
     ),
   };
   const reviewQueryBuilder = {
+    withDeleted: jest.fn().mockReturnThis(),
     innerJoin: jest.fn().mockReturnThis(),
     leftJoin: jest.fn().mockReturnThis(),
     addSelect: jest.fn().mockReturnThis(),

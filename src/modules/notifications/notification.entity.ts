@@ -15,6 +15,7 @@ export enum NotificationType {
   REVIEW_REQUEST = "review_request",
   POST_EXPIRING = "post_expiring",
   POST_EXPIRED = "post_expired",
+  MODERATION_WARNING = "moderation_warning",
 }
 
 export type NotificationTargetType =

@@ -1,3 +1,13 @@
+import { UserEntity } from "../user/user.entity";
+import { PostRenewalEntity } from "./post-renewal.entity";
+import { PostLifecycleService } from "./post-lifecycle.service";
+import {
+  PostActivationPolicyService,
+  POSTING_RESTRICTION_POLICY,
+} from "./post-activation-policy.service";
+import { ModerationPostingPolicy } from "./moderation-posting-policy";
+import { PostExpiryService } from "./post-expiry.service";
+import { PostExpiryScheduler } from "./post-expiry.scheduler";
 import { StorageModule } from "../storage/storage.module";
 import { Module } from "@nestjs/common";
 import { TypeOrmModule } from "@nestjs/typeorm";
@@ -37,7 +47,19 @@ import { ModerationModule } from "../moderation/moderation.module";
     ModerationModule,
   ],
   controllers: [PostsController, AdminPostPromotionsController],
-  providers: [PostsService, PostPromotionsService],
-  exports: [PostsService],
+  providers: [
+    PostsService,
+    PostPromotionsService,
+    PostLifecycleService,
+    PostActivationPolicyService,
+    ModerationPostingPolicy,
+    {
+      provide: POSTING_RESTRICTION_POLICY,
+      useExisting: ModerationPostingPolicy,
+    },
+    PostExpiryService,
+    PostExpiryScheduler,
+  ],
+  exports: [PostsService, PostLifecycleService],
 })
 export class PostsModule {}

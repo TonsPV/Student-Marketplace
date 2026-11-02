@@ -4,8 +4,8 @@ import {
 } from "../../src/config/post-expiration.config";
 
 describe("post expiration config (centralized, env-driven)", () => {
-  it("defaults to the proposed 30-day policy", () => {
-    expect(postExpirationConfig({})).toEqual({ durationDays: 30 });
+  it("defaults to the agreed 14-day policy", () => {
+    expect(postExpirationConfig({})).toEqual({ durationDays: 14 });
   });
 
   it("reads POST_EXPIRATION_DAYS", () => {
@@ -13,7 +13,7 @@ describe("post expiration config (centralized, env-driven)", () => {
       durationDays: 60,
     });
     expect(postExpirationConfig({ POST_EXPIRATION_DAYS: "" })).toEqual({
-      durationDays: 30,
+      durationDays: 14,
     });
   });
 
@@ -24,9 +24,9 @@ describe("post expiration config (centralized, env-driven)", () => {
     expect(() => postExpirationConfig({ POST_EXPIRATION_DAYS: "0" })).toThrow(
       "1..365",
     );
-    expect(() => postExpirationConfig({ POST_EXPIRATION_DAYS: "30.5" })).toThrow(
-      "1..365",
-    );
+    expect(() =>
+      postExpirationConfig({ POST_EXPIRATION_DAYS: "30.5" }),
+    ).toThrow("1..365");
     expect(() => postExpirationConfig({ POST_EXPIRATION_DAYS: "366" })).toThrow(
       "1..365",
     );

@@ -1,4 +1,9 @@
-import { Inject, Injectable, Optional } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  Optional,
+  ForbiddenException,
+} from "@nestjs/common";
 import { EntityManager } from "typeorm";
 import { POST_QUOTA } from "./post-lifecycle.constants";
 
@@ -8,6 +13,7 @@ export interface PostingDecision {
   blockedUntil: Date | null;
   /** Effective quota can be reduced by reputation, never increased above 5. */
   limit: number;
+  denial?: ForbiddenException;
 }
 
 export interface PostingRestrictionPolicy {
@@ -29,7 +35,8 @@ export class PostActivationPolicyService {
     manager: EntityManager,
     sellerId: string,
   ): Promise<PostingDecision> {
-    // Reputation restrictions will be connected by Tấn through the token above.
+    // Production binds this token to ModerationPostingPolicy (manual and
+    // live reputation restrictions). Isolated consumers may omit the policy.
     if (!this.restrictions) {
       return {
         allowed: true,

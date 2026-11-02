@@ -1,3 +1,9 @@
+jest.mock("../../src/modules/moderation/reputation-posting-policy", () => ({
+  sellerPostingReputation: jest
+    .fn()
+    .mockResolvedValue({ blocked: false, warning: false, reason: null }),
+}));
+import { UserEntity } from "../../src/modules/user/user.entity";
 import "reflect-metadata";
 import { ForbiddenException } from "@nestjs/common";
 import type { DataSource, Repository } from "typeorm";
@@ -54,6 +60,7 @@ function setup(options: {
     sellerId: SELLER,
     status: PostStatus.ACTIVE,
     location: null,
+    expiresAt: new Date(LOCKED_AT.getTime() + 14 * 86400000),
     deletedAt: new Date("2026-10-01T00:00:00Z"),
   });
   const query: Record<string, jest.Mock> = {};
@@ -71,6 +78,7 @@ function setup(options: {
       return value;
     }),
     findOne: jest.fn(async () => ({ ...post })),
+    countBy: jest.fn(async () => 0),
     createQueryBuilder: jest.fn().mockReturnValue(query),
     restore: jest.fn(async () => calls.push("restore:post")),
     // Phase 4 Step 2: restore grants a fresh expiry window when the old one
@@ -84,10 +92,21 @@ function setup(options: {
       return { id: CATEGORY };
     }),
   };
-  // Every repository comes from the transaction manager, never the defaults.
+  const userQuery: Record<string, jest.Mock> = {};
+  userQuery.setLock = jest.fn(() => {
+    calls.push(`lock:user:${SELLER}`);
+    return userQuery;
+  });
+  userQuery.where = jest.fn(() => userQuery);
+  userQuery.getOne = jest.fn(async () => ({ id: SELLER, isLocked: false }));
   const manager = {
+    query: jest.fn(async () => [{ now: LOCKED_AT }]),
     getRepository: (entity: unknown) =>
-      entity === CategoryEntity ? categories : repo,
+      entity === UserEntity
+        ? { createQueryBuilder: () => userQuery }
+        : entity === CategoryEntity
+          ? categories
+          : repo,
   };
   const transaction = jest.fn(
     async (isolation: string, fn: (m: unknown) => unknown) => {
@@ -106,6 +125,22 @@ function setup(options: {
     },
   );
   const moderation = {
+    getActivePostingRestrictions: jest.fn(
+      async (_userId: string, { now }: { now: Date }) => {
+        calls.push(`check:${SELLER}@${now.toISOString()}`);
+        return options.restricted
+          ? [
+              {
+                type: PostingRestrictionType.PERMANENT,
+                reason: "Fraud",
+                startsAt: new Date("2026-01-01"),
+                expiresAt: null,
+                liftedAt: null,
+              },
+            ]
+          : [];
+      },
+    ),
     lockPostingUser,
     assertCanPost,
     lockAndAssertCanPost: jest.fn(async (m: unknown, userId: string) =>
@@ -177,7 +212,7 @@ describe("PostsService posting restriction enforcement", () => {
       `lock:user:${SELLER}`,
       "lock:post:pessimistic_write",
       checkedAtLock,
-      "restore:post",
+      "save:post",
     ]);
   });
 
@@ -193,6 +228,7 @@ describe("PostsService posting restriction enforcement", () => {
       checkedAtLock,
     ]);
     expect(repo.restore).not.toHaveBeenCalled();
+    expect(repo.save).not.toHaveBeenCalled();
   });
 
   it("no-op restore and outsiders take no lock at all", async () => {

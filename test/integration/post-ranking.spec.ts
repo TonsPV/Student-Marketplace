@@ -45,32 +45,42 @@ describe("unified ranking with promotion and expiration", () => {
         status: PostStatus.SOLD,
       });
       const reviewer = await createTestUser(ds);
-      await ds.getRepository(ReviewEntity).save({
-        reviewerId: reviewer.id,
-        postId: carrier.id,
-        rating,
-        comment: null,
-      });
+      await ds.getRepository(ReviewEntity).save(
+        ds.getRepository(ReviewEntity).create({
+          reviewerId: reviewer.id,
+          postId: carrier.id,
+          rating,
+          comment: null,
+        }),
+      );
     }
     return seller;
   }
 
   const listingPost = (sellerId: string, overrides: Partial<PostEntity> = {}) =>
-    createTestPost(ds, sellerId, category.id, overrides);
+    createTestPost(ds, sellerId, category.id, {
+      publishedAt: new Date(
+        (overrides.expiresAt?.getTime() ?? Date.now() + 14 * 86400000) -
+          14 * 86400000,
+      ),
+      ...overrides,
+    });
 
   const promote = async (
     postId: string,
     overrides: Partial<PostPromotionEntity> = {},
   ) =>
-    ds.getRepository(PostPromotionEntity).save({
-      postId,
-      startsAt: PAST,
-      endsAt: FUTURE,
-      createdById: (await createTestUser(ds)).id,
-      cancelledAt: null,
-      cancelledById: null,
-      ...overrides,
-    });
+    ds.getRepository(PostPromotionEntity).save(
+      ds.getRepository(PostPromotionEntity).create({
+        postId,
+        startsAt: PAST,
+        endsAt: FUTURE,
+        createdById: (await createTestUser(ds)).id,
+        cancelledAt: null,
+        cancelledById: null,
+        ...overrides,
+      }),
+    );
 
   const findAll = (query: Partial<FindPostsDto> = {}) =>
     service.findAll(
@@ -116,7 +126,7 @@ describe("unified ranking with promotion and expiration", () => {
     });
     const B = await listingPost(excellent.id, {
       title: "B excellent plain",
-      createdAt: created(),
+      createdAt: new Date(now - 45 * 60 * 1000),
       expiresAt: FUTURE,
     });
     const C = await listingPost(good.id, {
@@ -141,7 +151,7 @@ describe("unified ranking with promotion and expiration", () => {
     });
     const F = await listingPost(low.id, {
       title: "F low boosted",
-      createdAt: created(),
+      createdAt: new Date(now - 10 * 60 * 1000),
       expiresAt: FUTURE,
     });
     // G: eligible seller + active promotion, but the POST itself expired.
@@ -153,7 +163,7 @@ describe("unified ranking with promotion and expiration", () => {
     // H: eligible post with an EXPIRED promotion — must not be boosted.
     const H = await listingPost(excellent.id, {
       title: "H excellent expired promo",
-      createdAt: created(),
+      createdAt: new Date(now - 30 * 60 * 1000),
       expiresAt: FUTURE,
     });
     const S = await listingPost(good.id, {
@@ -177,23 +187,26 @@ describe("unified ranking with promotion and expiration", () => {
     await promote(E.id);
     await promote(F.id);
     await promote(G.id);
-    await promote(H.id, { endsAt: PAST });
+    await promote(H.id, {
+      startsAt: new Date(PAST.getTime() - 60_000),
+      endsAt: PAST,
+    });
     await promote(S.id, {
       startsAt: FUTURE,
       endsAt: new Date(now + 2 * 24 * 60 * 60 * 1000),
     });
     const cancelled = await promote(X.id);
-    await ds
-      .getRepository(PostPromotionEntity)
-      .update(cancelled.id, { cancelledAt: new Date() });
+    await ds.getRepository(PostPromotionEntity).update(cancelled.id, {
+      cancelledAt: new Date(),
+      cancelledById: cancelled.createdById,
+    });
     // W has two overlapping ACTIVE promotions — must still appear once.
     await promote(W.id, { endsAt: new Date(now + 12 * 60 * 60 * 1000) });
     await promote(W.id, {
-      startsAt: new Date(now + 6 * 60 * 60 * 1000),
+      startsAt: new Date(now - 30 * 60 * 1000),
       endsAt: new Date(now + 36 * 60 * 60 * 1000),
     });
   });
-
 
   afterAll(async () => {
     if (ds) await disposeTestDatabase(ds);
@@ -306,4 +319,3 @@ describe("unified ranking with promotion and expiration", () => {
     expect(low.items.map((post) => post.title)).toEqual(["F low boosted"]);
   });
 });
-
