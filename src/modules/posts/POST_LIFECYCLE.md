@@ -217,6 +217,11 @@ Các migration nền `PostLifecycle1791810000000` và `PaymentsPromotions1791810
 
 ## Uy tín, cảnh báo và đẩy tin sau khi tích hợp
 
+- Home/search mặc định (`RECOMMENDED` / “Đề xuất”) xếp tin có gói đẩy đang
+  chạy trước, rồi mức uy tín, điểm/số đánh giá, ngày tạo và ID giảm dần.
+  Ưu tiên đẩy áp dụng xuyên các nhóm uy tín và trước phân trang, sau bộ lọc.
+  Các chế độ Mới nhất, Uy tín cao đến thấp và Giá giữ thứ tự riêng đã chọn.
+
 - Quyền tạo/khôi phục tin đang hiển thị/gia hạn được kiểm tra trong transaction,
   sau khi khóa seller. Từ 3 đánh giá: trung bình dưới 2 sao cảnh báo; dưới 1,5
   sao chặn kích hoạt. Ngưỡng so sánh dùng tổng điểm chính xác, không dùng điểm

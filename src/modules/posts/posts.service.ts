@@ -153,8 +153,8 @@ export class PostsService {
   }
 
   /**
-   * Public listing feed. Phase 4: RECOMMENDED (reputation priority with an
-   * active-promotion boost) is the default sort, replacing the previous
+   * Public listing feed. RECOMMENDED (active promotions first, then seller
+   * reputation) is the default sort, replacing the previous
    * createdAt DESC — intentional, not a silent revert. The legacy
    * findAndCount branch removed in Step 2 was unreachable dead code (the
    * DTO defaults `sort` to RECOMMENDED) and returned sellers without
@@ -1082,10 +1082,9 @@ export class PostsService {
         .addOrderBy("post.createdAt", "DESC")
         .addOrderBy("post.id", "DESC");
     }
-    // RECOMMENDED — Unified Ranking: reputation level first, then an active
-    // promotion (still inside the same reputation level, so a boosted LOW
-    // post can never outrank an EXCELLENT one), then rating/count/createdAt
-    // and a stable id tie-breaker. The 0/1 boost is a select output column
+    // RECOMMENDED: active promotions first, then reputation level,
+    // rating/count/createdAt and a stable id tie-breaker. Paid placement
+    // takes precedence across reputation groups. The boost is a select column
     // (EXISTS, never a JOIN — no post duplication) and relies on the
     // database statement clock shared with listing eligibility.
     builder.addSelect(
@@ -1093,8 +1092,8 @@ export class PostsService {
       "has_active_promotion",
     );
     return builder
-      .orderBy("reputation_priority", "DESC")
-      .addOrderBy("has_active_promotion", "DESC")
+      .orderBy("has_active_promotion", "DESC")
+      .addOrderBy("reputation_priority", "DESC")
       .addOrderBy("ranking_rating_average", "DESC", "NULLS LAST")
       .addOrderBy("ranking_review_count", "DESC", "NULLS LAST")
       .addOrderBy("post.createdAt", "DESC")
