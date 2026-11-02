@@ -15,6 +15,7 @@ import { queryResponseFields } from "../../src/modules/payments/querydr";
 import { PaymentsPromotions1791810000000 } from "../../src/database/migrations/1791810000000-PaymentsPromotions";
 import { UserEntity } from "../../src/modules/user/user.entity";
 import { sign } from "../../src/modules/payments/vnpay";
+import { PaymentHistoryDto } from "../../src/modules/payments/payment-history.dto";
 import {
   createTestDataSource,
   initializeTestDatabase,
@@ -526,6 +527,95 @@ describe("payment transactions", () => {
     });
     expect(
       await ds.getRepository(Promotion).countBy({ orderId: order.id }),
+    ).toBe(0);
+  });
+  it("lists only the owner's history with stable pagination, filters and deleted post context", async () => {
+    const historyOwner = await createTestUser(ds);
+    const category = await createTestCategory(ds);
+    const orders = [];
+    for (let index = 0; index < 3; index++) {
+      const post = await createTestPost(ds, historyOwner.id, category.id, {
+        title: `History post ${index}`,
+      });
+      orders.push(
+        await s.create(
+          historyOwner.id,
+          post.id,
+          "boost_24h",
+          `history-${index}`,
+          "127.0.0.1",
+        ),
+      );
+    }
+    const success = event(orders[0].txnRef);
+    success.vnp_TransactionNo = "99887766";
+    success.vnp_SecureHash = sign(success, "test-secret");
+    expect((await s.ipn(success)).RspCode).toBe("00");
+    const cancelled: Record<string, string> = {
+      ...event(orders[1].txnRef),
+      vnp_ResponseCode: "24",
+      vnp_TransactionStatus: "09",
+    };
+    cancelled.vnp_SecureHash = sign(cancelled, "test-secret");
+    expect((await s.ipn(cancelled)).RspCode).toBe("00");
+    await ds.getRepository(PostEntity).softDelete(orders[0].postId);
+    const all = await s.history(
+      historyOwner.id,
+      Object.assign(new PaymentHistoryDto(), { limit: 2 }),
+    );
+    const next = await s.history(
+      historyOwner.id,
+      Object.assign(new PaymentHistoryDto(), { limit: 2, page: 2 }),
+    );
+    expect(all.meta).toMatchObject({ total: 3, totalPages: 2 });
+    expect(
+      new Set([...all.items, ...next.items].map((row) => row.id)).size,
+    ).toBe(3);
+    for (const [status, expectedId] of [
+      ["paid", orders[0].id],
+      ["failed", orders[1].id],
+      ["pending", orders[2].id],
+    ] as const) {
+      const result = await s.history(
+        historyOwner.id,
+        Object.assign(new PaymentHistoryDto(), { status }),
+      );
+      expect(result.meta.total).toBe(1);
+      expect(result.items[0].id).toBe(expectedId);
+    }
+    const paid = (
+      await s.history(
+        historyOwner.id,
+        Object.assign(new PaymentHistoryDto(), { status: "paid" }),
+      )
+    ).items[0];
+    expect(paid).toMatchObject({
+      postTitle: "History post 0",
+      postAvailable: false,
+      status: "paid",
+      amount: 10000,
+      hours: 24,
+    });
+    expect(paid.promotion).not.toBeNull();
+    expect(paid).not.toHaveProperty("paymentUrl");
+    expect(paid).not.toHaveProperty("ownerId");
+    await ds
+      .getRepository(PaymentOrder)
+      .update(orders[0].id, {
+        fulfillment: "requires_review",
+        reason: "promotion_cancelled_by_admin",
+      });
+    expect(
+      (
+        await s.history(
+          historyOwner.id,
+          Object.assign(new PaymentHistoryDto(), { status: "requires_review" }),
+        )
+      ).items.map((row) => row.id),
+    ).toEqual([orders[0].id]);
+    const stranger = await createTestUser(ds);
+    expect(
+      (await s.history(stranger.id, new PaymentHistoryDto())).meta.total,
     ).toBe(0);
   });
   it("uses the current database clock when a transaction crosses the listing deadline", async () => {

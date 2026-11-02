@@ -18,6 +18,8 @@ import { PromotionEligibilityService } from "./promotion-eligibility.service";
 import { queryRequest, verifiedQueryResponse } from "./querydr";
 import { isIP } from "node:net";
 import { sign, verify, vnDate } from "./vnpay";
+import { PaymentHistoryDto } from "./payment-history.dto";
+import { createPaginationMeta } from "../../common/utils/pagination.util";
 @Injectable()
 export class PaymentsService implements OnModuleInit {
   private readonly logger = new Logger(PaymentsService.name);
@@ -127,6 +129,69 @@ export class PaymentsService implements OnModuleInit {
     });
     if (!o) throw new NotFoundException();
     return this.project(o);
+  }
+  async history(owner: string, query: PaymentHistoryDto) {
+    const builder = this.db
+      .getRepository(PaymentOrder)
+      .createQueryBuilder("payment")
+      .withDeleted()
+      .leftJoinAndMapOne(
+        "payment.post",
+        PostEntity,
+        "post",
+        'post.id = payment."postId"',
+      )
+      .leftJoinAndMapOne(
+        "payment.promotion",
+        Promotion,
+        "promotion",
+        'promotion."orderId" = payment.id',
+      )
+      .where('payment."ownerId" = :owner', { owner });
+    if (query.status === "paid") builder.andWhere("payment.status = 'paid'");
+    if (query.status === "failed")
+      builder.andWhere("payment.status IN ('failed', 'cancelled')");
+    if (query.status === "pending")
+      builder.andWhere("payment.status IN ('pending', 'expired')");
+    if (query.status === "requires_review")
+      builder.andWhere("payment.fulfillment = 'requires_review'");
+    const [rows, total] = await builder
+      .orderBy("payment.createdAt", "DESC")
+      .addOrderBy("payment.id", "DESC")
+      .skip((query.page - 1) * query.limit)
+      .take(query.limit)
+      .getManyAndCount();
+    return {
+      items: rows.map((row) => {
+        const record = row as PaymentOrder & {
+          post?: PostEntity;
+          promotion?: Promotion;
+        };
+        return {
+          id: row.id,
+          postId: row.postId,
+          txnRef: row.txnRef,
+          postTitle: record.post?.title ?? "Tin đăng không còn khả dụng",
+          postAvailable: Boolean(record.post && !record.post.deletedAt),
+          packageCode: row.packageCode,
+          amount: row.amount,
+          hours: row.hours,
+          status: row.status,
+          fulfillment: row.fulfillment,
+          reason: row.reason,
+          createdAt: row.createdAt,
+          expiresAt: row.expiresAt,
+          promotion: record.promotion
+            ? {
+                startsAt: record.promotion.startsAt,
+                endsAt: record.promotion.endsAt,
+                cancelledAt: record.promotion.cancelledAt,
+              }
+            : null,
+        };
+      }),
+      meta: createPaginationMeta(query, total),
+    };
   }
   private async reuseCheckout(
     m: EntityManager,

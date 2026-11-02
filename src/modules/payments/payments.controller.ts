@@ -17,6 +17,7 @@ import { Public } from "../../common/decorators/customize.decorator";
 import { GetAuthorizationContext } from "../authorization/decorators/get-authorization-context.decorator";
 import type { AuthenticatedContext } from "../authorization/authorization.types";
 import { PaymentsService } from "./payments.service";
+import { PaymentHistoryDto } from "./payment-history.dto";
 class CreateOrder {
   @IsUUID() postId!: string;
   @IsIn(["boost_24h", "boost_48h", "boost_72h"]) packageCode!: string;
@@ -24,6 +25,12 @@ class CreateOrder {
 @Controller("payments")
 export class PaymentsController {
   constructor(private service: PaymentsService) {}
+  @Get("orders") @AuthOnly() history(
+    @Query() query: PaymentHistoryDto,
+    @GetAuthorizationContext() ctx: AuthenticatedContext,
+  ) {
+    return this.service.history(ctx.principal.id, query);
+  }
   @Get("packages") @AuthOnly() packages() {
     return this.service.packages();
   }

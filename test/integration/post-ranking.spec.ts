@@ -212,27 +212,30 @@ describe("unified ranking with promotion and expiration", () => {
     if (ds) await disposeTestDatabase(ds);
   });
 
-  it("RECOMMENDED: reputation first, then active promotion, then rating; expired post excluded", async () => {
+  it("RECOMMENDED: active promotions first across reputation groups, then reputation; expired post excluded", async () => {
     const result = await findAll({ categoryId: category.id });
     const titles = result.items.map((post) => post.title);
-    // A before B (same EXCELLENT seller, promotion boost); C before D;
-    // INSUFFICIENT_DATA above UNRATED; UNRATED+promo still above LOW+promo;
-    // G (expired post) excluded; H (expired promo) not boosted; W appears
-    // exactly once despite two active promotions.
+    // All live promotions precede plain posts, including LOW/UNRATED boosts
+    // versus an unpromoted EXCELLENT seller. Reputation orders each group.
+    // Expired/scheduled/cancelled campaigns receive no boost; expired posts
+    // are excluded, and overlapping promotions never duplicate a listing.
     expect(titles).toEqual([
       "A excellent boosted",
-      "H excellent expired promo",
-      "B excellent plain",
       "C good boosted",
       "W good two active promos",
+      "E unrated boosted",
+      "F low boosted",
+      "H excellent expired promo",
+      "B excellent plain",
       "S good scheduled promo",
       "X good cancelled promo",
       "D medium plain",
       "I insufficient plain",
-      "E unrated boosted",
-      "F low boosted",
     ]);
     expect(result.meta.total).toBe(11);
+    const searched = await search({ categoryId: category.id });
+    expect(searched.items.map((post) => post.title)).toEqual(titles);
+    expect(searched.meta.total).toBe(11);
   });
 
   it("promotion lifecycle states present in fixtures (active/scheduled/expired/cancelled)", async () => {
@@ -292,6 +295,13 @@ describe("unified ranking with promotion and expiration", () => {
     const page3 = await findAll({ categoryId: category.id, page: 3, limit: 4 });
     expect(page1.meta.total).toBe(11);
     expect(page1.items).toHaveLength(4);
+    expect(page1.items.map((post) => post.title)).toEqual([
+      "A excellent boosted",
+      "C good boosted",
+      "W good two active promos",
+      "E unrated boosted",
+    ]);
+    expect(page2.items[0].title).toBe("F low boosted");
     expect(page2.items).toHaveLength(4);
     expect(page3.items).toHaveLength(3);
     const ids = [...page1.items, ...page2.items, ...page3.items].map(
